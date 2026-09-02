@@ -4,7 +4,7 @@ HTML, JavaScript, AJAX 등 웹 프론트엔드 기본 기술을 학습하고, �
 
 ---
 
-## 🛠 개발 환경 및 기술 스택 (Environment & Tech Stack)
+## 🛠 개발 환경 및 기술 스택
 
 * **Languages**: HTML5, CSS3, JavaScript (ES6+)
 * **Techniques**: Asynchronous JavaScript (AJAX / Fetch API, XMLHttpRequest)
@@ -29,5 +29,6 @@ HTML, JavaScript, AJAX 등 웹 프론트엔드 기본 기술을 학습하고, �
 ```text
 ├── html/             # HTML 기초 및 JavaScript 문법/DOM 실습
 ├── ajax/             # AJAX 비동기 통신 실습
-├── movie_site/       # HTML 실습 간단한 영화사이트 제작
-└── todo_list/        # Todo-List 애플리케이션
+├── movie-site/       # HTML 실습 간단한 영화사이트 제작
+├── Javascript/       # Javascript 기초 및 실습
+└── todo-list/        # Todo-List 애플리케이션
