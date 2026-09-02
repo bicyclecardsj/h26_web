@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>마당서점 온라인 스토어</title>
+    <style>
+        /* Modern 프리미엄 스토어 테마 및 고대비 색상 체계 */
+        :root {
+            --primary-color: #0f172a; /* 신뢰감을 주는 미드나잇 블랙 */
+            --accent-color: #2563eb; /* 포인트 블루 */
+            --admin-color: #0f766e; /* 깊이감 있는 에메랄드 그린 */
+            --bg-light: #f8fafc; /* 고급스러운 베이스 그레이 */
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
+            --success-color: #16a34a;
+            --danger-color: #df2c2c;
+            --card-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.05);
+        }
+        
+        * { box-sizing: border-box; font-family: 'Pretendard', 'Malgun Gothic', sans-serif; letter-spacing: -0.4px; }
+        body { margin: 0; padding: 0; background-color: var(--bg-light); color: var(--text-main); line-height: 1.6; }
+        
+        /* 헤더 내비게이션 바 디자인 */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 40px;
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.01);
+        }
+        h1 { margin: 0; font-size: 22px; font-weight: 800; color: var(--primary-color); cursor: pointer; transform: scale(1); transition: transform 0.2s; }
+        h1:hover { transform: scale(1.02); }
+        .auth-status { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+        .user-name { font-weight: 700; color: var(--primary-color); padding-right: 4px; border-right: 2px solid var(--border-color); padding-right: 12px; }
+        
+        /* 범용 버튼 컴포넌트 */
+        .btn {
+            background-color: var(--primary-color);
+            color: #ffffff;
+            border: 1px solid transparent;
+            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .btn:hover { background-color: #334155; transform: translateY(-1px); }
+        .btn-outline { background-color: transparent; color: var(--text-main); border: 1px solid #cbd5e1; }
+        .btn-outline:hover { background-color: #f1f5f9; border-color: #94a3b8; }
+        .btn-accent { background-color: var(--accent-color); }
+        .btn-accent:hover { background-color: #1d4ed8; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
+        .btn-admin { background-color: var(--admin-color); }
+        .btn-admin:hover { background-color: #115e59; }
+        .btn-danger { background-color: var(--danger-color); }
+        .btn-danger:hover { background-color: #b91c1c; }
+        
+        /* 레이아웃 구조 세팅 */
+        .wrapper { max-width: 1140px; margin: 40px auto; padding: 0 20px; }
+        .container { background-color: #ffffff; border: 1px solid var(--border-color); padding: 32px; border-radius: 12px; margin-bottom: 30px; box-shadow: var(--card-shadow); }
+        .hidden { display: none !important; }
+        
+        /* 상단 검색 컨트롤러 */
+        .search-container { display: flex; gap: 8px; margin-bottom: 30px; background: #fff; padding: 6px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: var(--card-shadow); }
+        .search-container select { border: none; padding: 8px 16px; font-size: 14px; font-weight: 700; color: var(--text-main); outline: none; background: transparent; cursor: pointer; }
+        .search-container input { flex-grow: 1; border: none; padding: 8px; font-size: 14px; outline: none; }
+        
+        /* 타이틀 명세 */
+        .list-title { font-size: 18px; font-weight: 800; margin-bottom: 22px; color: var(--primary-color); padding-bottom: 10px; border-bottom: 2px solid var(--primary-color); display: flex; justify-content: space-between; align-items: center; }
+        
+        /* 메인 홈 도서 그리드 체계 */
+        .grid-layout { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 20px; }
+        .book-card {
+            background-color: #ffffff;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 22px;
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.01);
+        }
+        .book-card:hover { border-color: var(--text-main); transform: translateY(-5px); box-shadow: 0 12px 24px -10px rgba(15, 23, 42, 0.1); }
+        .book-card h3 { margin: 0 0 8px 0; font-size: 15px; font-weight: 700; color: var(--primary-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .book-card .author { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; }
+        .book-card .price { font-size: 15px; font-weight: 800; color: var(--primary-color); margin-top: auto; }
+        
+        /* 가로 캐러셀 */
+        .carousel { display: flex; gap: 20px; overflow-x: auto; padding-bottom: 12px; }
+        .carousel .book-card { min-width: 220px; }
+        
+        /* 테이블 데이터 폼 고도화 */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border-color); }
+        th { background-color: #f8fafc; font-weight: 700; color: var(--text-main); border-top: 1px solid var(--border-color); }
+        
+        /* 입력 폼 필드 스타일 공통화 */
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: #475569; }
+        .form-group input, .form-group select { width: 100%; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; outline: none; color: var(--text-main); transition: border-color 0.15s; }
+        .form-group input:focus, .form-group select:focus { border-color: var(--accent-color); box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1); }
+        .form-group input[readonly] { background-color: #f1f5f9; color: var(--text-muted); cursor: not-allowed; border-color: var(--border-color); }
+        
+        /* 대시보드 구조 분할 시스템 */
+        .dashboard-grid { display: grid; grid-template-columns: 290px 1fr; gap: 28px; }
+        .side-panel { background: #ffffff; border: 1px solid var(--border-color); padding: 26px; border-radius: 12px; height: fit-content; box-shadow: var(--card-shadow); }
+        .main-panel { display: flex; flex-direction: column; gap: 28px; }
+        
+        /* 장바구니 결제창 전용 콤팩트 레이아웃 스타일 규칙 */
+        .cart-wrapper { max-width: 860px; margin: 20px auto; }
+        .cart-grid { display: grid; grid-template-columns: 1fr 300px; gap: 24px; }
+        .cart-table th, .cart-table td { padding: 16px 12px; font-size: 13px; }
+        .cart-table td b { display: block; font-size: 14px; color: var(--primary-color); margin-bottom: 4px; }
+        
+        /* 비밀번호 확인 레이어 디자인 */
+        .secure-lock-box { text-align: center; padding: 30px 10px; }
+        
+        /* 분석 대시보드 탭 및 카드 */
+        .stats-tab-menu { display: flex; gap: 6px; margin-bottom: 16px; background: #f1f5f9; padding: 4px; border-radius: 6px; }
+        .stats-tab-btn { flex: 1; padding: 8px; border: none; background: transparent; font-size: 12px; font-weight: 700; color: var(--text-muted); cursor: pointer; border-radius: 4px; transition: all 0.15s; }
+        .stats-tab-btn.active { background: #ffffff; color: var(--primary-color); box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+        
+        /* 사이드바 메뉴 메뉴 공통 스타일 */
+        .side-menu-list { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; }
+        .side-menu-item { padding: 12px 16px; border-radius: 6px; font-size: 13px; font-weight: 700; color: var(--text-main); cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+        .side-menu-item:hover { background-color: #f1f5f9; color: var(--accent-color); }
+        .side-menu-item.active { background-color: #eff6ff; color: var(--accent-color); border-color: #bfdbfe; }
+        
+        /* 관리자 메뉴용 활성화 스타일 */
+        .side-menu-item.admin-active { background-color: #e6f4f1; color: var(--admin-color); border-color: #cdf0ea; }
+        .side-menu-item.admin-hover:hover { color: var(--admin-color); }
+
+        /* 대시보드 요약용 카드 위젯 */
+        .summary-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px; }
+        .summary-card { background: #f8fafc; border: 1px solid var(--border-color); padding: 20px; border-radius: 8px; text-align: center; }
+        .summary-card p { margin: 0 0 6px 0; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+        .summary-card h4 { margin: 0; font-size: 20px; font-weight: 800; color: var(--primary-color); }
+
+        /* 배지 관리 태그 */
+        .badge { display: inline-block; padding: 4px 8px; font-size: 11px; font-weight: 700; border-radius: 4px; }
+        .badge-info { background-color: #f1f5f9; color: #334155; }
+        .badge-success { background-color: #e8f5e9; color: var(--success-color); }
+        .badge-danger { background-color: #ffebee; color: var(--danger-color); }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1 onclick="route('main-page')">MADANG BOOKS</h1>
+        <div class="auth-status" id="global-auth-zone"></div>
+    </header>
+
+    <div class="wrapper">
+        
+        <div id="main-page" class="page-view">
+            <div class="search-container">
+                <select id="main-category-select">
+                    <option value="ALL">전체 장르</option>
+                    <option value="10">컴퓨터/IT</option>
+                    <option value="20">인문/사회</option>
+                    <option value="30">소설/에세이</option>
+                </select>
+                <input type="text" id="main-search-keyword" placeholder="도서명을 입력해 주세요.">
+                <button class="btn" onclick="triggerSearch()">검색</button>
+            </div>
+
+            <div class="container">
+                <div class="list-title">최근 7일간 베스트셀러</div>
+                <div class="carousel" id="bestseller-carousel-area"></div>
+            </div>
+
+            <div class="container">
+                <div class="list-title">전체 도서 목록</div>
+                <div class="grid-layout" id="total-book-grid-area"></div>
+            </div>
+        </div>
+
+        <div id="login-page" class="page-view hidden">
+            <div class="container" style="max-width: 380px; margin: 80px auto;">
+                <div class="list-title" style="text-align: center; padding-bottom: 12px; justify-content: center;">로그인</div>
+                <div class="form-group">
+                    <label>회원 ID</label>
+                    <input type="text" id="input-username" placeholder="일반회원: 1234 / 관리자: 9999">
+                </div>
+                <div class="form-group">
+                    <label>비밀번호</label>
+                    <input type="password" id="input-password" placeholder="비밀번호 입력">
+                </div>
+                <button class="btn" style="width: 100%; padding: 12px; margin-top: 8px;" onclick="executeLoginMock()">로그인</button>
+            </div>
+        </div>
+
+        <div id="detail-page" class="page-view hidden">
+            <button class="btn btn-outline" style="margin-bottom: 24px;" onclick="route('main-page')">도서 목록으로 돌아가기</button>
+            <div class="dashboard-grid">
+                <div class="side-panel">
+                    <h2 id="view-detail-title" style="margin-top:0; font-size: 19px; font-weight: 800; color: var(--primary-color);">도서 제목</h2>
+                    <p id="view-detail-author" style="color:var(--text-muted); font-size:13px; margin-bottom:20px;">저자명</p>
+                    <div style="font-size: 22px; font-weight: 800; color: var(--accent-color); margin-bottom: 20px;"><span id="view-detail-price"></span>원</div>
+                    
+                    <div class="form-group">
+                        <label>장르 분류</label>
+                        <input type="text" id="view-detail-category" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>출판사</label>
+                        <input type="text" id="view-detail-publisher" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label>ISBN 코드</label>
+                        <input type="text" id="view-detail-isbn" readonly>
+                    </div>
+                    <div class="form-group" style="font-size:13px; margin: 18px 0;">
+                        <span style="font-weight: 700; color:#475569;">재고 상태:</span>
+                        <span id="view-detail-stock" style="font-weight: 800; color:var(--accent-color); margin-left:5px;">-</span>
+                    </div>
+                    <button class="btn btn-accent" style="width:100%; padding:13px;" onclick="addCartActionMock()">장바구니 담기</button>
+                </div>
+                <div class="container">
+                    <div class="list-title">독자 리뷰 및 평점</div>
+                    <div id="view-detail-reviews-area"></div>
+                </div>
+            </div>
+        </div>
+
+    </div> <div class="wrapper hidden page-view" id="cart-page">
+        <div class="cart-wrapper">
+            <div class="list-title">장바구니 및 결제</div>
+            <div class="cart-grid">
+                <div class="container" style="margin: 0; padding: 24px;">
+                    <table class="cart-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 55%;">선택 상품 정보</th>
+                                <th style="text-align: right;">수량</th>
+                                <th style="text-align: right;">합계 금액</th>
+                                <th style="text-align: center;">관리</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+                <div class="side-panel">
+                    <h3 style="margin-top: 0; font-size: 14px; font-weight: 800; color: var(--text-main);">최종 결제 정보</h3>
+                    <div style="display:flex; justify-content:space-between; margin:20px 0 15px 0; font-size:15px; font-weight:800;">
+                        <span>결제 예정 금액</span>
+                        <span style="color:var(--accent-color);" id="cart-total-sum">0원</span>
+                    </div>
+                    <div class="form-group">
+                        <label>배송지 주소</label>
+                        <input type="text" id="cart-delivery-address" placeholder="주소를 입력해 주세요">
+                    </div>
+                    <button class="btn btn-accent" style="width: 100%; padding: 13px; font-size: 14px;" onclick="executeCheckoutMock()">결제하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="wrapper hidden page-view" id="mypage-page">
+        <div class="list-title">마이페이지 샌드박스</div>
+        <div class="dashboard-grid">
+            
+            <div class="side-panel" style="padding: 18px; width: 100%;">
+                <h3 style="margin: 5px 0 12px 10px; font-size: 14px; font-weight: 800; color: var(--accent-color);">마이 메뉴</h3>
+                <div class="side-menu-list">
+                    <div class="side-menu-item active" id="my-menu-edit" onclick="switchMypageSubPage('edit')">회원정보 변경</div>
+                    <div class="side-menu-item" id="my-menu-orders" onclick="switchMypageSubPage('orders')">주문내역 및 배송 조회</div>
+                    <div class="side-menu-item" id="my-menu-reviews" onclick="switchMypageSubPage('reviews')">내가 작성한 리뷰</div>
+                    <div class="side-menu-item" id="my-menu-withdraw" onclick="switchMypageSubPage('withdraw')" style="color: var(--danger-color);">회원탈퇴</div>
+                </div>
+            </div>
+            
+            <div class="main-panel">
+                
+                <div id="mypage-sub-edit" class="mypage-sub-view">
+                    <div class="container" style="margin:0; border-top: 3px solid var(--accent-color);">
+                        <h3 style="margin-top: 0; font-size: 15px; font-weight: 800;">회원 기본정보 수정</h3>
+                        
+                        <div id="my-info-lock-view" class="secure-lock-box">
+                            <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.5;">개인정보를 안전하게 보호하기 위해<br>현재 계정의 비밀번호를 입력해 주세요.</p>
+                            <input type="password" id="my-secure-password-input" placeholder="비밀번호 입력 (pass1234)" style="width:240px; padding:10px; margin-bottom:14px; border:1px solid #cbd5e1; border-radius:6px; font-size:13px; outline:none; text-align: center;">
+                            <br>
+                            <button class="btn btn-accent" style="width: 240px; padding: 10px;" onclick="verifyMypagePassword()">비밀번호 확인</button>
+                        </div>
+                        
+                        <div id="my-info-edit-form" class="hidden" style="margin-top: 15px;">
+                            <div class="form-group"><label>회원 고유번호 (식별 PK)</label><input type="text" id="my-id-field" readonly></div>
+                            <div class="form-group"><label>성명</label><input type="text" id="my-name-field"></div>
+                            <div class="form-group"><label>연락처</label><input type="text" id="my-phone-field"></div>
+                            <div class="form-group"><label>기본 배송지 주소</label><input type="text" id="my-addr-field"></div>
+                            <button class="btn btn-accent" style="width: 100%; margin-top: 5px;" onclick="saveProfileChangesMock()">수정 내용 안전하게 저장</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="mypage-sub-orders" class="mypage-sub-view hidden">
+                    <div class="container" style="margin:0;">
+                        <h3 style="margin-top:0; font-size: 15px; font-weight: 800; color:var(--primary-color);">주문 및 배송 내역 현황</h3>
+                        <table id="my-orders-table">
+                            <thead><tr><th>주문번호</th><th>배송지</th><th>결제금액</th><th>상태</th><th>취소청구</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="mypage-sub-reviews" class="mypage-sub-view hidden">
+                    <div class="container" style="margin:0;">
+                        <h3 style="margin-top:0; font-size: 15px; font-weight: 800; color:var(--primary-color);">내가 작성한 서평 목록</h3>
+                        <table id="my-reviews-table">
+                            <thead><tr><th>도서 ISBN</th><th>평점</th><th>리뷰 내용</th><th>작성일자</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="mypage-sub-withdraw" class="mypage-sub-view hidden">
+                    <div class="container" style="margin:0; border-top: 3px solid var(--danger-color);">
+                        <h3 style="margin-top:0; font-size: 15px; font-weight: 800; color:var(--danger-color);">마당서점 회원 탈퇴 프로세스</h3>
+                        <div style="background:#fff5f5; border: 1px solid #fee2e2; padding: 20px; border-radius: 8px; margin: 15px 0;">
+                            <p style="margin:0; font-size:13px; color:#b91c1c; font-weight:700; line-height:1.6;">
+                                ⚠️ 탈퇴 전 반드시 확인해 주세요!<br>
+                                회원 탈퇴 시 마당서점 시스템 내의 고객님의 개인정보는 모두 즉시 영구 파기되며, 과거에 구매 이력 확인 및 연동되어 있던 리뷰 데이터 모니터링 조회가 불가능합니다.
+                            </p>
+                        </div>
+                        <div class="form-group" style="margin-top: 20px;">
+                            <label>계정 탈퇴 확인을 위해 비밀번호를 재입력해 주세요.</label>
+                            <input type="password" id="withdraw-password-confirm" placeholder="비밀번호 입력" style="max-width: 320px;">
+                        </div>
+                        <button class="btn btn-danger" style="padding: 12px 24px;" onclick="executeWithdrawMock()">회원 탈퇴 처리 확정</button>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+
+    <div class="wrapper hidden page-view" id="admin-page">
+        <div class="list-title" style="color: var(--admin-color); border-color: var(--admin-color);">관리자 백오피스 센터</div>
+        <div class="dashboard-grid">
+            
+            <div class="side-panel" style="padding: 18px; width: 100%;">
+                <h3 style="margin: 5px 0 12px 10px; font-size: 14px; font-weight: 800; color: var(--admin-color);">백오피스 메뉴</h3>
+                <div class="side-menu-list">
+                    <div class="side-menu-item admin-hover active admin-active" id="menu-item-summary" onclick="switchAdminSubPage('summary')">종합 대시보드 요약</div>
+                    <div class="side-menu-item admin-hover" id="menu-item-add" onclick="switchAdminSubPage('add')">신규 도서 등록</div>
+                    <div class="side-menu-item admin-hover" id="menu-item-books" onclick="switchAdminSubPage('books')">도서 재고 및 편집</div>
+                    <div class="side-menu-item admin-hover" id="menu-item-reviews" onclick="switchAdminSubPage('reviews')">부적절한 리뷰 삭제</div>
+                </div>
+            </div>
+            
+            <div class="main-panel">
+                
+                <div id="admin-sub-summary" class="admin-sub-view">
+                    <div class="container" style="margin:0;">
+                        <h3 style="margin-top:0; font-size: 15px; font-weight: 800; color: var(--admin-color); margin-bottom: 20px;">스토어 실시간 현황 요약</h3>
+                        <div class="summary-grid">
+                            <div class="summary-card">
+                                <p>총 보유 도서 품목</p>
+                                <h4 id="summary-stat-books">0종</h4>
+                            </div>
+                            <div class="summary-card">
+                                <p>등록된 전체 리뷰 수</p>
+                                <h4 id="summary-stat-reviews">0개</h4>
+                            </div>
+                        </div>
+
+                        <h3 style="font-size: 14px; font-weight: 800; margin: 25px 0 15px 0;">기간별 매출 분석</h3>
+                        <div class="stats-tab-menu">
+                            <button class="stats-tab-btn active" id="tab-btn-total" onclick="switchStatsView('total')">누적 총액</button>
+                            <button class="stats-tab-btn" id="tab-btn-month" onclick="switchStatsView('month')">월별 매출</button>
+                            <button class="stats-tab-btn" id="tab-btn-day" onclick="switchStatsView('day')">일별 매출</button>
+                        </div>
+                        <div style="background:#f8fafc; padding:20px; border-radius:8px; border:1px solid var(--border-color);" id="admin-stats-render-box"></div>
+                    </div>
+                </div>
+
+                <div id="admin-sub-add" class="admin-sub-view hidden">
+                    <div class="container" style="margin:0; border-top: 3px solid var(--admin-color);">
+                        <h3 style="margin-top: 0; font-size: 15px; font-weight: 800;">신규 도서 상품 등록</h3>
+                        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-top: 15px;">
+                            <div class="form-group"><label>ISBN 코드</label><input type="text" id="adm-isbn"></div>
+                            <div class="form-group"><label>도서명</label><input type="text" id="adm-title"></div>
+                            <div class="form-group"><label>저자</label><input type="text" id="adm-author"></div>
+                            <div class="form-group"><label>출판사</label><input type="text" id="adm-publisher"></div>
+                            <div class="form-group">
+                                <label>장르 분류</label>
+                                <select id="adm-category">
+                                    <option value="10">컴퓨터/IT</option>
+                                    <option value="20">인문/사회</option>
+                                    <option value="30">소설/에세이</option>
+                                </select>
+                            </div>
+                            <div class="form-group"><label>판매가 (원)</label><input type="number" id="adm-price"></div>
+                            <div class="form-group" style="grid-column: span 2;"><label>최초 입고량</label><input type="number" id="adm-stock" value="10"></div>
+                        </div>
+                        <button class="btn btn-admin" style="width:100%; margin-top:10px; padding:12px;" onclick="adminAddBook()">도서 등록 확정</button>
+                    </div>
+                </div>
+
+                <div id="admin-sub-books" class="admin-sub-view hidden">
+                    <div class="container" style="margin:0;">
+                        <h3 style="margin-top: 0; font-size: 15px; font-weight: 800;">도서 카탈로그 재고 관리 및 편집</h3>
+                        <table id="adm-books-table">
+                            <thead><tr><th>ISBN</th><th>도서명</th><th>가격</th><th>재고조정</th><th>명령</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="admin-sub-reviews" class="admin-sub-view hidden">
+                    <div class="container" style="margin:0;">
+                        <h3 style="margin-top: 0; font-size: 15px; font-weight: 800;">작성 리뷰 모니터링 및 삭제 권한</h3>
+                        <table id="adm-reviews-table">
+                            <thead><tr><th>리뷰ID</th><th>작성자</th><th>내용</th><th>별점</th><th>관리</th></tr></thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        const CATEGORY_MAP = { 10: "컴퓨터/IT", 20: "인문/사회", 30: "소설/에세이" };
+
+        let MOCK_MEMBER = [
+            { memberId: 1234, password: "pass1234", name: "홍길동", phone: "010-1234-5678", address: "경기도 성남시 분당구 삼평동", role: "일반" },
+            { memberId: 9999, password: "admin9999", name: "최고관리자", phone: "010-0000-0000", address: "마당서점 통합 제어 센터", role: "관리자" }
+        ];
+
+        let MOCK_BOOK = [
+            { bookIsbn: "979119", title: "오라클 21c 마스터 가이드", author: "이디비", publisher: "미래정보기술", categoryId: 10, price: 28000, stock: 15 },
+            { bookIsbn: "979120", title: "자바 스프링 부트 아키텍처", author: "백엔드", publisher: "코딩스쿨", categoryId: 10, price: 32000, stock: 8 },
+            { bookIsbn: "979121", title: "생각의 탄생과 거대 역사", author: "김인문", publisher: "지식하우스", categoryId: 20, price: 19500, stock: 22 },
+            { bookIsbn: "979122", title: "마지막 서점의 비밀", author: "최소설", publisher: "그린북스", categoryId: 30, price: 14800, stock: 5 },
+            { bookIsbn: "979123", title: "알고리즘 문제풀이 전술", author: "박코딩", publisher: "테크미디어", categoryId: 10, price: 25000, stock: 11 },
+            { bookIsbn: "979124", title: "Do it! 딥러닝 입문 개정판", author: "인공지", publisher: "이지스퍼블리싱", categoryId: 10, price: 30000, stock: 14 },
+            { bookIsbn: "979125", title: "사피엔스의 경제학적 통찰", author: "유발한", publisher: "웅진지식하우스", categoryId: 20, price: 22000, stock: 19 },
+            { bookIsbn: "979126", title: "불편한 편의점의 하루", author: "김호연", publisher: "나무옆의자", categoryId: 30, price: 14000, stock: 25 },
+            { bookIsbn: "979127", title: "모던 리눅스 서버 커널 관리", author: "리누스", publisher: "한빛미디어", categoryId: 10, price: 36000, stock: 7 }
+        ];
+
+        let MOCK_CART = []; 
+        let MOCK_ORDERS = [
+            { orderId: 1001, memberId: 1234, deliveryAddr: "경기도 성남시 분당구 삼평동", totalPrice: 60000, orderStatus: "결제완료", orderDate: "2026-04-15" },
+            { orderId: 1002, memberId: 1234, deliveryAddr: "경기도 성남시 분당구 삼평동", totalPrice: 14800, orderStatus: "배송중", orderDate: "2026-05-12" },
+            { orderId: 1003, memberId: 1234, deliveryAddr: "서울시 서초구 강남대로", totalPrice: 25000, orderStatus: "결제완료", orderDate: "2026-05-20" },
+            { orderId: 1004, memberId: 1234, deliveryAddr: "인천광역시 부평구", totalPrice: 30000, orderStatus: "결제완료", orderDate: "2026-05-20" }
+        ];
+
+        let MOCK_ORDER_DETAIL = [
+            { bookIsbn: "979120", orderId: 1001, quantity: 1, unitPrice: "32000" },
+            { bookIsbn: "979119", orderId: 1001, quantity: 1, unitPrice: "28000" },
+            { bookIsbn: "979122", orderId: 1002, quantity: 1, unitPrice: "14800" },
+            { bookIsbn: "979123", orderId: 1003, quantity: 1, unitPrice: "25000" },
+            { bookIsbn: "979124", orderId: 1004, quantity: 1, unitPrice: "30000" }
+        ];
+
+        let MOCK_REVIEW = [
+            { reviewId: 1, bookIsbn: "979119", memberId: 1234, rating: 5, content: "DB 정규화 원리와 SQL 최적화 기법을 체계적으로 가르쳐주는 최고의 교재.", createdAt: "2026-04-18" },
+            { reviewId: 2, bookIsbn: "979120", memberId: 1234, rating: 4, content: "실무 마이크로서비스 설계 시 아키텍처 잡는 데 큰 도움을 받았습니다.", createdAt: "2026-05-13" },
+            { reviewId: 3, bookIsbn: "979121", memberId: 1234, rating: 5, content: "역사의 거대한 흐름 속에서 인간의 인지적 진화를 정교하게 다룬 명작입니다.", createdAt: "2026-05-14" },
+            { reviewId: 4, bookIsbn: "979126", memberId: 1234, rating: 5, content: "마음이 따뜻해지는 소설입니다. 읽는 내내 힐링을 선사하네요.", createdAt: "2026-05-15" },
+            { reviewId: 5, bookIsbn: "979123", memberId: 1234, rating: 2, content: "광고 유도성 리뷰가 많네요. 내용 오류가 일부 보이고 가독성이 좀 떨어집니다.", createdAt: "2026-05-19" },
+            { reviewId: 6, bookIsbn: "979124", memberId: 1234, rating: 5, content: "수식 범벅인 인공지능 이론을 직관적인 시각 자료로 완벽하게 이해시켜 줍니다.", createdAt: "2026-05-20" }
+        ];
+
+        let sessionUser = null;
+        let activeIsbn = null;
+        let currentStatsMode = 'total'; 
+
+        function route(pageId) {
+            document.querySelectorAll('.page-view').forEach(view => view.classList.add('hidden'));
+            document.getElementById(pageId).classList.remove('hidden');
+            window.scrollTo(0, 0);
+        }
+
+        window.onload = function() {
+            renderAuthZone();
+            renderMainLists();
+        }
+
+        function renderAuthZone() {
+            const zone = document.getElementById('global-auth-zone');
+            if (!sessionUser) {
+                zone.innerHTML = `<button class="btn" onclick="route('login-page')">로그인</button>`;
+            } else if (sessionUser.role === '관리자') {
+                zone.innerHTML = `
+                    <span class="user-name">관리자 마스터</span>
+                    <button class="btn btn-admin" onclick="openAdminCenter()">관리자 센터</button>
+                    <button class="btn btn-outline" onclick="executeLogoutMock()">로그아웃</button>`;
+            } else {
+                const cartCount = MOCK_CART.filter(c => c.memberId === sessionUser.memberId).length;
+                zone.innerHTML = `
+                    <span class="user-name">${sessionUser.name} 회원님</span>
+                    <button class="btn btn-outline" onclick="openCartPage()">장바구니 (${cartCount})</button>
+                    <button class="btn" onclick="openMyPageDashboard()">마이페이지</button>
+                    <button class="btn btn-outline" onclick="executeLogoutMock()">로그아웃</button>`;
+            }
+        }
+
+        function renderMainLists(filteredBooks = null) {
+            const salesCountMap = {};
+            MOCK_ORDER_DETAIL.forEach(d => salesCountMap[d.bookIsbn] = (salesCountMap[d.bookIsbn] || 0) + d.quantity);
+            const sortedBestsellers = [...MOCK_BOOK].sort((a, b) => (salesCountMap[b.bookIsbn] || 0) - (salesCountMap[a.bookIsbn] || 0));
+
+            const carouselArea = document.getElementById('bestseller-carousel-area');
+            carouselArea.innerHTML = sortedBestsellers.slice(0, 4).map((b, idx) => `
+                <div class="book-card" onclick="openBookDetail('${b.bookIsbn}')">
+                    <div style="font-size:11px; font-weight:800; color:var(--accent-color); margin-bottom:5px;">BEST ${idx+1}</div>
+                    <h3>${b.title}</h3>
+                    <div class="author">${b.author}</div>
+                    <div class="price">${b.price.toLocaleString()}원</div>
+                </div>
+            `).join('');
+
+            const targetBooks = filteredBooks || MOCK_BOOK;
+            const gridArea = document.getElementById('total-book-grid-area');
+            if (targetBooks.length === 0) {
+                gridArea.innerHTML = `<p style="grid-column: 1/-1; text-align:center; padding:40px; color:var(--text-muted); font-size:13px;">일치하는 상품이 존재하지 않습니다.</p>`;
+                return;
+            }
+            gridArea.innerHTML = targetBooks.map(b => `
+                <div class="book-card" onclick="openBookDetail('${b.bookIsbn}')">
+                    <h3>${b.title}</h3>
+                    <div class="author">${b.author} | ${b.publisher}</div>
+                    <div class="price">${b.price.toLocaleString()}원</div>
+                </div>
+            `).join('');
+        }
+
+        function triggerSearch() {
+            const categoryFilter = document.getElementById('main-category-select').value;
+            const keyword = document.getElementById('main-search-keyword').value.trim().toLowerCase();
+            let results = MOCK_BOOK;
+            if (categoryFilter !== 'ALL') results = results.filter(b => b.categoryId === parseInt(categoryFilter));
+            if (keyword) {
+                results = results.filter(b => b.title.toLowerCase().includes(keyword) || b.author.toLowerCase().includes(keyword) || b.bookIsbn.includes(keyword));
+            }
+            renderMainLists(results);
+        }
+
+        function executeLoginMock() {
+            const uid = parseInt(document.getElementById('input-username').value);
+            const pass = document.getElementById('input-password').value;
+            const account = MOCK_MEMBER.find(m => m.memberId === uid && m.password === pass);
+
+            if (account) {
+                sessionUser = account;
+                renderAuthZone();
+                route('main-page');
+            } else {
+                alert('회원 정보 인증에 실패했습니다.');
+            }
+        }
+
+        function executeLogoutMock() {
+            sessionUser = null;
+            renderAuthZone();
+            route('main-page');
+        }
+
+        function openBookDetail(isbn) {
+            activeIsbn = isbn;
+            const book = MOCK_BOOK.find(b => b.bookIsbn === isbn);
+            
+            document.getElementById('view-detail-title').innerText = book.title;
+            document.getElementById('view-detail-isbn').value = book.bookIsbn;
+            document.getElementById('view-detail-author').innerText = book.author;
+            document.getElementById('view-detail-publisher').value = book.publisher;
+            document.getElementById('view-detail-price').innerText = book.price.toLocaleString();
+            document.getElementById('view-detail-stock').innerText = book.stock > 0 ? `${book.stock}권` : '품절';
+            document.getElementById('view-detail-category').value = CATEGORY_MAP[book.categoryId] || "미분류";
+
+            const targetReviews = MOCK_REVIEW.filter(r => r.bookIsbn === isbn);
+            const reviewArea = document.getElementById('view-detail-reviews-area');
+            
+            if(targetReviews.length === 0) {
+                reviewArea.innerHTML = `<p style="color:var(--text-muted); font-size:13px; padding: 20px 0;">등록된 리뷰가 없습니다.</p>`;
+            } else {
+                reviewArea.innerHTML = targetReviews.map(r => `
+                    <div style="border-bottom:1px solid var(--border-color); padding:14px 0;">
+                        <span style="color:#f59e0b; font-weight:700;">★ ${r.rating}.0</span>
+                        <span style="font-size:12px; color:var(--text-muted); margin-left:10px;">ID: ${r.memberId} | ${r.createdAt}</span>
+                        <p style="margin:6px 0 0 0; font-size:13px; color:#334155;">${r.content}</p>
+                    </div>
+                `).join('');
+            }
+            route('detail-page');
+        }
+
+        function addCartActionMock() {
+            if(!sessionUser) {
+                alert('로그인이 필요한 서비스입니다.');
+                route('login-page');
+                return;
+            }
+            const existingItem = MOCK_CART.find(c => c.memberId === sessionUser.memberId && c.bookIsbn === activeIsbn);
+            if(existingItem) {
+                existingItem.quantity += 1;
+            } else {
+                MOCK_CART.push({ memberId: sessionUser.memberId, bookIsbn: activeIsbn, quantity: 1 });
+            }
+            renderAuthZone();
+            if(confirm('장바구니에 담겼습니다. 장바구니로 이동하시겠습니까?')) {
+                openCartPage();
+            }
+        }
+
+        function openCartPage() {
+            if(!sessionUser) return;
+            const myCart = MOCK_CART.filter(c => c.memberId === sessionUser.memberId);
+            const tbody = document.querySelector('#cart-page .cart-table tbody');
+            document.getElementById('cart-delivery-address').value = sessionUser.address;
+            
+            let totalSum = 0;
+            if(myCart.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:40px; color:var(--text-muted);">장바구니가 비어 있습니다.</td></tr>`;
+            } else {
+                tbody.innerHTML = myCart.map((c, index) => {
+                    const book = MOCK_BOOK.find(b => b.bookIsbn === c.bookIsbn);
+                    const itemTotal = book.price * c.quantity;
+                    totalSum += itemTotal;
+                    return `
+                        <tr>
+                            <td>
+                                <b>${book.title}</b>
+                                <span style="font-size:11px; color:var(--text-muted);">ISBN: ${book.bookIsbn} | 단가: ${book.price.toLocaleString()}원</span>
+                            </td>
+                            <td style="text-align: right; font-weight: 700;">${c.quantity}개</td>
+                            <td style="text-align: right; font-weight: 800; color:var(--primary-color);">${itemTotal.toLocaleString()}원</td>
+                            <td style="text-align: center;"><button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="removeCartItem(${index})">삭제</button></td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            document.getElementById('cart-total-sum').innerText = totalSum.toLocaleString() + '원';
+            route('cart-page');
+        }
+
+        function removeCartItem(index) {
+            const myCart = MOCK_CART.filter(c => c.memberId === sessionUser.memberId);
+            const targetItem = myCart[index];
+            MOCK_CART = MOCK_CART.filter(c => !(c.memberId === sessionUser.memberId && c.bookIsbn === targetItem.bookIsbn));
+            renderAuthZone();
+            openCartPage();
+        }
+
+        function executeCheckoutMock() {
+            const myCart = MOCK_CART.filter(c => c.memberId === sessionUser.memberId);
+            if(myCart.length === 0) { alert('결제할 상품이 없습니다.'); return; }
+            
+            let totalSum = 0;
+            const newOrderId = MOCK_ORDERS.length + 1001;
+            const addr = document.getElementById('cart-delivery-address').value;
+            
+            myCart.forEach(c => {
+                const book = MOCK_BOOK.find(b => b.bookIsbn === c.bookIsbn);
+                totalSum += book.price * c.quantity;
+                MOCK_ORDER_DETAIL.push({ bookIsbn: c.bookIsbn, orderId: newOrderId, quantity: c.quantity, unitPrice: String(book.price) });
+            });
+
+            MOCK_ORDERS.push({ orderId: newOrderId, memberId: sessionUser.memberId, deliveryAddr: addr, totalPrice: totalSum, orderStatus: "결제완료", orderDate: new Date().toISOString().slice(0,10) });
+            MOCK_CART = MOCK_CART.filter(c => c.memberId !== sessionUser.memberId); 
+            
+            alert('주문 및 결제가 완료되었습니다.');
+            renderAuthZone();
+            openMyPageDashboard();
+        }
+
+        // [구조 개편 반영] 마이페이지 대시보드 진입 컨트롤러
+        function openMyPageDashboard() {
+            // 진입 시 항상 비밀번호 인증 락 레이어 보이기 & 수정 폼 감추기
+            document.getElementById('my-info-lock-view').classList.remove('hidden');
+            document.getElementById('my-info-edit-form').classList.add('hidden');
+            document.getElementById('my-secure-password-input').value = '';
+            document.getElementById('withdraw-password-confirm').value = '';
+
+            // 회원 폼 기초 데이터 매핑
+            document.getElementById('my-id-field').value = sessionUser.memberId;
+            document.getElementById('my-name-field').value = sessionUser.name;
+            document.getElementById('my-phone-field').value = sessionUser.phone;
+            document.getElementById('my-addr-field').value = sessionUser.address;
+
+            // 테이블 데이터 실시간 리렌더링
+            renderMypageTables();
+            
+            // 페이지 라우팅 및 기본 서브메뉴를 '회원정보 변경(edit)'으로 강제 고정
+            route('mypage-page');
+            switchMypageSubPage('edit');
+        }
+
+        // [구조 개편 반영] 마이페이지 전용 서브메뉴 전환 라우팅 컨트롤러
+        function switchMypageSubPage(subId) {
+            document.querySelectorAll('.side-menu-item').forEach(item => item.classList.remove('active'));
+            document.querySelectorAll('.mypage-sub-view').forEach(view => view.classList.add('hidden'));
+            
+            const activeMenuItem = document.getElementById(`my-menu-${subId}`);
+            if (activeMenuItem) activeMenuItem.classList.add('active');
+            
+            const targetSubView = document.getElementById(`mypage-sub-${subId}`);
+            if (targetSubView) targetSubView.classList.remove('hidden');
+        }
+
+        function verifyMypagePassword() {
+            const inputPw = document.getElementById('my-secure-password-input').value;
+            if(inputPw === sessionUser.password) {
+                document.getElementById('my-info-lock-view').classList.add('hidden');
+                document.getElementById('my-info-edit-form').classList.remove('hidden');
+            } else {
+                alert('비밀번호가 일치하지 않습니다.');
+            }
+        }
+
+        function renderMypageTables() {
+            const myOrders = MOCK_ORDERS.filter(o => o.memberId === sessionUser.memberId);
+            const orderTbody = document.querySelector('#my-orders-table tbody');
+            if (myOrders.length === 0) {
+                orderTbody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:20px; color:var(--text-muted);">주문 내역이 존재하지 않습니다.</td></tr>`;
+            } else {
+                orderTbody.innerHTML = myOrders.map(o => `
+                    <tr>
+                        <td><b>${o.orderId}</b></td>
+                        <td><span style="font-size:12px; color:var(--text-muted);">${o.deliveryAddr}</span></td>
+                        <td><b>${o.totalPrice.toLocaleString()}원</b></td>
+                        <td><span class="badge ${o.orderStatus==='주문취소'?'badge-danger':o.orderStatus==='배송완료'?'badge-success':'badge-info'}">${o.orderStatus}</span></td>
+                        <td>
+                            ${(o.orderStatus === '결제완료' || o.orderStatus === '배송준비전') ? 
+                            `<button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="cancelOrderMock(${o.orderId})">취소</button>` : 
+                            `<span style="font-size:11px; color:var(--text-muted);">불가</span>`}
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            const myReviews = MOCK_REVIEW.filter(r => r.memberId === sessionUser.memberId);
+            const reviewTbody = document.querySelector('#my-reviews-table tbody');
+            if (myReviews.length === 0) {
+                reviewTbody.innerHTML = `<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted);">작성한 리뷰가 존재하지 않습니다.</td></tr>`;
+            } else {
+                reviewTbody.innerHTML = myReviews.map(r => `
+                    <tr>
+                        <td><code>${r.bookIsbn}</code></td>
+                        <td style="color:#f59e0b; font-weight:700;">★ ${r.rating}.0</td>
+                        <td>${r.content}</td>
+                        <td><span style="font-size:11px; color:var(--text-muted);">${r.createdAt}</span></td>
+                    </tr>
+                `).join('');
+            }
+        }
+
+        function saveProfileChangesMock() {
+            sessionUser.name = document.getElementById('my-name-field').value;
+            sessionUser.phone = document.getElementById('my-phone-field').value;
+            sessionUser.address = document.getElementById('my-addr-field').value;
+            renderAuthZone();
+            alert('회원 정보가 성공적으로 수정되었습니다.');
+        }
+
+        function cancelOrderMock(orderId) {
+            const order = MOCK_ORDERS.find(o => o.orderId === orderId);
+            if(confirm(`주문번호 [ ${orderId} ] 건을 취소하시겠습니까?`)) {
+                order.orderStatus = "주문취소";
+                alert('주문 취소가 완료되었습니다.');
+                renderMypageTables();
+                renderStatsEngine(); 
+            }
+        }
+
+        // [구조 개편 반영] 요구사항 명세서 MEM-06 기준 회원탈퇴 기능 구현
+        function executeWithdrawMock() {
+            const inputPw = document.getElementById('withdraw-password-confirm').value;
+            if(!inputPw) { alert('탈퇴 확인을 위해 비밀번호를 입력해 주세요.'); return; }
+            
+            if(inputPw !== sessionUser.password) {
+                alert('비밀번호가 일치하지 않습니다. 다시 확인해 주세요.');
+                return;
+            }
+
+            if(confirm('정말로 마당서점을 탈퇴하시겠습니까?\n탈퇴 시 모든 개인 정보와 활동 데이터는 즉시 소멸합니다.')) {
+                const currentId = sessionUser.memberId;
+                
+                // 관련 연동 데이터 스크럽 (리뷰 삭제 등 요구사항 반영 가능)
+                MOCK_REVIEW = MOCK_REVIEW.filter(r => r.memberId !== currentId);
+                MOCK_CART = MOCK_CART.filter(c => c.memberId !== currentId);
+                MOCK_MEMBER = MOCK_MEMBER.filter(m => m.memberId !== currentId);
+                
+                alert('회원 탈퇴 처리가 완료되었습니다. 그동안 마당서점을 이용해 주셔서 감사합니다.');
+                executeLogoutMock();
+            }
+        }
+
+        // 관리자 서브페이지 전환 라우팅 컨트롤러
+        function switchAdminSubPage(subId) {
+            document.querySelectorAll('.admin-sub-view').forEach(view => view.classList.add('hidden'));
+            document.querySelectorAll('#admin-page .side-menu-item').forEach(item => item.classList.remove('active'));
+            
+            document.getElementById(`menu-item-${subId}`).classList.add('active');
+            document.getElementById(`admin-sub-${subId}`).classList.remove('hidden');
+            
+            if(subId === 'summary') {
+                document.getElementById('summary-stat-books').innerText = MOCK_BOOK.length + "종";
+                document.getElementById('summary-stat-reviews').innerText = MOCK_REVIEW.length + "개";
+                renderStatsEngine();
+            }
+        }
+
+        function switchStatsView(mode) {
+            currentStatsMode = mode;
+            document.querySelectorAll('.stats-tab-menu .stats-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`tab-btn-${mode}`).classList.add('active');
+            renderStatsEngine();
+        }
+
+        function renderStatsEngine() {
+            const container = document.getElementById('admin-stats-render-box');
+            const validOrders = MOCK_ORDERS.filter(o => o.orderStatus !== '주문취소');
+            
+            if (currentStatsMode === 'total') {
+                const totalCount = validOrders.length;
+                const totalSum = validOrders.reduce((acc, o) => acc + o.totalPrice, 0);
+                container.innerHTML = `
+                    <div style="text-align:center; padding: 10px 0;">
+                        <p style="margin:0 0 6px 0; font-size:13px; color:var(--text-muted);">실거래 수: <b>${totalCount}건</b> | 정상 결제 완료 판정</p>
+                        <p style="margin:0; font-size:18px; font-weight:800; color:var(--admin-color);">총 누적 매출액: ${totalSum.toLocaleString()}원</p>
+                    </div>
+                `;
+            } 
+            else if (currentStatsMode === 'month') {
+                const monthGroup = {};
+                validOrders.forEach(o => {
+                    const monthKey = o.orderDate.slice(0, 7); 
+                    monthGroup[monthKey] = (monthGroup[monthKey] || 0) + o.totalPrice;
+                });
+                
+                let html = `<table style="width:100%; font-size:13px; margin:0;"><thead><tr><th>매출 기준월</th><th style="text-align:right;">월간 매출 총합</th></tr></thead><tbody>`;
+                Object.keys(monthGroup).sort().forEach(m => {
+                    html += `<tr><td><b>${m}월</b></td><td style="text-align:right; font-weight:700; color:var(--admin-color);">${monthGroup[m].toLocaleString()}원</td></tr>`;
+                });
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+            } 
+            else if (currentStatsMode === 'day') {
+                const dayGroup = {};
+                validOrders.forEach(o => {
+                    const dayKey = o.orderDate; 
+                    dayGroup[dayKey] = (dayGroup[dayKey] || 0) + o.totalPrice;
+                });
+                
+                let html = `<table style="width:100%; font-size:13px; margin:0;"><thead><tr><th>매출 거래일자</th><th style="text-align:right;">일간 매출액</th></tr></thead><tbody>`;
+                Object.keys(dayGroup).sort().forEach(d => {
+                    html += `<tr><td>${d}</td><td style="text-align:right; font-weight:700; color:var(--admin-color);">${dayGroup[d].toLocaleString()}원</td></tr>`;
+                });
+                html += `</tbody></table>`;
+                container.innerHTML = html;
+            }
+        }
+
+        function openAdminCenter() {
+            route('admin-page');
+            switchAdminSubPage('summary');
+
+            const bookTbody = document.querySelector('#adm-books-table tbody');
+            bookTbody.innerHTML = MOCK_BOOK.map(b => `
+                <tr>
+                    <td><code>${b.bookIsbn}</code></td>
+                    <td><b>${b.title}</b></td>
+                    <td>${b.price.toLocaleString()}원</td>
+                    <td><input type="number" value="${b.stock}" style="width:60px; padding:4px;" id="stock-change-${b.bookIsbn}"></td>
+                    <td>
+                        <button class="btn btn-admin" style="padding:4px 8px; font-size:11px;" onclick="adminUpdateStock('${b.bookIsbn}')">수정</button>
+                        <button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="adminDeleteBook('${b.bookIsbn}')">삭제</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            const reviewTbody = document.querySelector('#adm-reviews-table tbody');
+            reviewTbody.innerHTML = MOCK_REVIEW.map(r => `
+                <tr>
+                    <td>${r.reviewId}</td>
+                    <td><code>${r.memberId}</code></td>
+                    <td><span style="font-size:12px; color:#334155;">${r.content}</span></td>
+                    <td style="color:#f59e0b; font-weight:700;">★ ${r.rating}.0</td>
+                    <td><button class="btn btn-danger" style="padding:4px 8px; font-size:11px;" onclick="adminDeleteReview(${r.reviewId})">삭제</button></td>
+                </tr>
+            `).join('');
+        }
+
+        function adminAddBook() {
+            const isbn = document.getElementById('adm-isbn').value.trim();
+            const title = document.getElementById('adm-title').value.trim();
+            const author = document.getElementById('adm-author').value.trim();
+            const publisher = document.getElementById('adm-publisher').value.trim();
+            const categoryId = parseInt(document.getElementById('adm-category').value);
+            const price = parseInt(document.getElementById('adm-price').value);
+            const stock = parseInt(document.getElementById('adm-stock').value);
+
+            if(!isbn || !title) { alert('필수 입력 요소를 확인해 주세요.'); return; }
+
+            MOCK_BOOK.push({ bookIsbn: isbn, title, author, publisher, categoryId, price, stock });
+            alert('새로운 도서가 백오피스 데이터베이스에 최종 반영되었습니다.');
+            
+            document.getElementById('adm-isbn').value = '';
+            document.getElementById('adm-title').value = '';
+            document.getElementById('adm-author').value = '';
+            document.getElementById('adm-publisher').value = '';
+            document.getElementById('adm-price').value = '';
+            
+            openAdminCenter();
+            switchAdminSubPage('books');
+            renderMainLists();
+        }
+
+        function adminUpdateStock(isbn) {
+            const newStock = parseInt(document.getElementById(`stock-change-${isbn}`).value);
+            const book = MOCK_BOOK.find(b => b.bookIsbn === isbn);
+            book.stock = newStock;
+            alert('재고 수량이 정상 변동되었습니다.');
+            openAdminCenter();
+            switchAdminSubPage('books');
+            renderMainLists();
+        }
+
+        function adminDeleteBook(isbn) {
+            if(confirm('해당 도서를 마당서점 판매 카탈로그에서 완전히 지우시겠습니까?')) {
+                MOCK_BOOK = MOCK_BOOK.filter(b => b.bookIsbn !== isbn);
+                alert('삭제가 완료되었습니다.');
+                openAdminCenter();
+                switchAdminSubPage('books');
+                renderMainLists();
+            }
+        }
+
+        function adminDeleteReview(reviewId) {
+            if(confirm('부적절한 내용으로 간주하여 이 서평을 직권 삭제하시겠습니까?')) {
+                MOCK_REVIEW = MOCK_REVIEW.filter(r => r.reviewId !== reviewId);
+                alert('리뷰 강제 삭제가 완료되었습니다.');
+                openAdminCenter();
+                switchAdminSubPage('reviews');
+            }
+        }
+    </script>
+</body>
+</html>

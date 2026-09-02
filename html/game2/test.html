@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>랜덤 합성 디펜스 - HARDCORE</title>
+    <style>
+        body { text-align: center; background-color: #111116; color: #fff; font-family: 'Malgun Gothic', sans-serif; margin: 0; overflow: hidden; }
+        canvas { background-color: #1a1a22; border: 4px solid #4a3b3b; border-radius: 12px; cursor: default; margin-top: 15px; box-shadow: 0 10px 30px rgba(255,0,0,0.1); }
+        .ui-info { margin-top: 8px; font-size: 14px; color: #9e8a8a; }
+    </style>
+</head>
+<body>
+
+    <h1 style="color: #ff4757; text-shadow: 0 0 10px rgba(255,71,87,0.3);">랜덤 합성 디펜스 : HARDCORE</h1>
+    <canvas id="gameCanvas" width="840" height="640"></canvas>
+    <div class="ui-info">
+        <b>시작 자금 200G</b> | <b>웨이브 클리어 보상 강화</b> | <b>실시간 자동 저장 시스템</b> | P: 일시정지
+    </div>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const TILE_SIZE = 80;
+const MAP_ROWS = 8;
+const MAP_COLS = 7; 
+const MAX_LEVEL = 5; 
+const MAX_UPGRADE = 5; 
+
+let TOWER_TYPES = [
+    { name: "불", color: "#ff4757", baseDmg: 16 },
+    { name: "얼음", color: "#54a0ff", baseDmg: 12 },
+    { name: "전기", color: "#feca57", baseDmg: 19 },
+    { name: "독", color: "#1dd1a1", baseDmg: 24 }
+];
+
+let upgradeLevels = [0, 0, 0, 0];
+let upgradeCosts = [100, 100, 100, 100];
+
+const PATH_TILES = [
+    {x: 0, y: 1}, {x: 1, y: 1}, {x: 2, y: 1}, {x: 3, y: 1}, {x: 4, y: 1}, {x: 5, y: 1}, 
+    {x: 5, y: 2}, {x: 5, y: 3}, 
+    {x: 4, y: 3}, {x: 3, y: 3}, {x: 2, y: 3}, {x: 1, y: 3}, 
+    {x: 1, y: 4}, {x: 1, y: 5}, 
+    {x: 2, y: 5}, {x: 3, y: 5}, {x: 4, y: 5}, {x: 5, y: 5}, {x: 6, y: 5}, 
+    {x: 6, y: 6}, {x: 6, y: 7}  
+];
+
+let gameState = "lobby"; 
+let gold = 200;        
+let lives = 10;        
+let towerCost = 100;   
+let wave = 1;
+let currentStage = 1; 
+let enemies = [];
+let towers = [];
+let bullets = [];
+let lightnings = []; 
+let dragTower = null;
+let waveTimer = 0;
+let enemiesToSpawn = 0;
+let bossWarningTimer = 0; // 보스 경고 연출 타이머 변수 (0보다 크면 경고 진행 중)
+
+class Enemy {
+    constructor(isBoss = false, isMidBoss = false) {
+        this.pathIndex = 0;
+        this.x = PATH_TILES[0].x * TILE_SIZE + TILE_SIZE/2;
+        this.y = PATH_TILES[0].y * TILE_SIZE + TILE_SIZE/2 - 50;
+        this.isBoss = isBoss;
+        this.isMidBoss = isMidBoss;
+        
+        let hpMultiplier = isBoss ? 30 : (isMidBoss ? 10 : 1);
+        this.hp = (80 + (wave * 90) * Math.pow(1.20, wave)) * hpMultiplier; 
+        this.maxHp = this.hp;
+        
+        this.baseSpeed = isBoss ? 0.5 : 1.3 + (wave * 0.20);
+        this.speed = this.baseSpeed;
+        this.radius = isBoss ? 32 : (isMidBoss ? 23 : 14);
+
+        this.burnTimer = 0; this.burnDamage = 0;
+        this.slowTimer = 0;
+        this.poisonTimer = 0; this.poisonDamage = 0;
+    }
+
+    move() {
+        if (this.slowTimer > 0) { this.slowTimer--; this.speed = this.baseSpeed * 0.5; } 
+        else { this.speed = this.baseSpeed; }
+
+        if (this.burnTimer > 0) { this.burnTimer--; this.hp -= this.burnDamage; }
+        if (this.poisonTimer > 0) { this.poisonTimer--; this.hp -= this.poisonDamage; }
+
+        let target = PATH_TILES[this.pathIndex];
+        if (!target) return true;
+        let tx = target.x * TILE_SIZE + TILE_SIZE/2;
+        let ty = target.y * TILE_SIZE + TILE_SIZE/2;
+        let dist = Math.hypot(tx - this.x, ty - this.y);
+
+        if (dist < this.speed) {
+            this.pathIndex++;
+            if (this.pathIndex >= PATH_TILES.length) return true; 
+        } else {
+            this.x += ((tx - this.x)/dist) * this.speed;
+            this.y += ((ty - this.y)/dist) * this.speed;
+        }
+        return false;
+    }
+
+    draw() {
+        if (this.poisonTimer > 0) ctx.fillStyle = "#26de81"; 
+        else if (this.slowTimer > 0) ctx.fillStyle = "#45aaf2"; 
+        else if (this.burnTimer > 0) ctx.fillStyle = "#ff3f34"; 
+        else ctx.fillStyle = this.isBoss ? "#eb3b5a" : (this.isMidBoss ? "#fa8231" : "#a5b1c2");
+
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2); ctx.fill();
+        
+        if(this.isBoss || this.isMidBoss) {
+            ctx.strokeStyle = "rgba(255,255,255,0.4)"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(this.x, this.y, this.radius + 4, 0, Math.PI*2); ctx.stroke();
+        }
+
+        ctx.fillStyle = "#333"; ctx.fillRect(this.x - 20, this.y - this.radius - 10, 40, 5);
+        ctx.fillStyle = "#2ed573"; ctx.fillRect(this.x - 20, this.y - this.radius - 10, 40 * Math.max(0, this.hp/this.maxHp), 5);
+    }
+}
+
+class Tower {
+    constructor(x, y, typeIdx, level = 1) {
+        this.gridX = x; this.gridY = y;
+        this.x = x * TILE_SIZE + TILE_SIZE/2;
+        this.y = y * TILE_SIZE + TILE_SIZE/2;
+        this.typeIdx = typeIdx; 
+        this.level = level;
+        this.updateStats();
+        this.cooldown = 0;
+        this.isDragging = false;
+    }
+
+    updateStats() {
+        this.type = TOWER_TYPES[this.typeIdx];
+        this.range = 100 + (this.level * 30);
+        this.damage = this.type.baseDmg * Math.pow(2.5, this.level - 1);
+    }
+
+    update() {
+        if (this.cooldown > 0) this.cooldown--;
+        if (this.cooldown === 0) {
+            let target = enemies.find(e => Math.hypot(e.x - this.x, e.y - this.y) < this.range);
+            if (target) {
+                if (this.typeIdx === 2) { 
+                    this.triggerChainLightning(target);
+                    this.cooldown = Math.max(8, 40 - (this.level * 7));
+                } else {
+                    bullets.push(new Bullet(this.x, this.y, target, this.damage, this.type.color, this.typeIdx, this.level));
+                    this.cooldown = Math.max(10, 35 - (this.level * 6)); 
+                }
+            }
+        }
+    }
+
+    triggerChainLightning(firstTarget) {
+        let currentTarget = firstTarget;
+        let chainCount = 0;
+        let maxChains = 2 + this.level; 
+        let hitEnemies = [currentTarget];
+
+        currentTarget.hp -= this.damage;
+        lightnings.push({ sx: this.x, sy: this.y, tx: currentTarget.x, ty: currentTarget.y, timer: 12 });
+
+        while (chainCount < maxChains - 1) {
+            let nextTarget = enemies.find(e => 
+                !hitEnemies.includes(e) && 
+                Math.hypot(e.x - currentTarget.x, e.y - currentTarget.y) < 120
+            );
+            if (nextTarget) {
+                nextTarget.hp -= this.damage * 0.75; 
+                lightnings.push({ sx: currentTarget.x, sy: currentTarget.y, tx: nextTarget.x, ty: nextTarget.y, timer: 12 });
+                hitEnemies.push(nextTarget);
+                currentTarget = nextTarget;
+                chainCount++;
+            } else { break; }
+        }
+    }
+
+    draw() {
+        ctx.save();
+        if (this.isDragging) ctx.globalAlpha = 0.5;
+        ctx.fillStyle = this.type.color;
+        ctx.shadowBlur = this.level * 4; ctx.shadowColor = this.type.color;
+        
+        ctx.beginPath();
+        if(this.typeIdx === 0) ctx.roundRect(this.x - 25, this.y - 25, 50, 50, 6); 
+        else if(this.typeIdx === 1) ctx.arc(this.x, this.y, 25, 0, Math.PI*2); 
+        else if(this.typeIdx === 2) { 
+            ctx.moveTo(this.x, this.y - 26); ctx.lineTo(this.x + 26, this.y);
+            ctx.lineTo(this.x, this.y + 26); ctx.lineTo(this.x - 26, this.y);
+        } else { 
+            for (let i = 0; i < 6; i++) {
+                let angle = (Math.PI / 3) * i;
+                ctx.lineTo(this.x + 26 * Math.cos(angle), this.y + 26 * Math.sin(angle));
+            }
+        }
+        ctx.fill();
+
+        ctx.fillStyle = "#000"; ctx.font = "bold 15px Arial"; ctx.textAlign = "center";
+        ctx.fillText(this.level >= MAX_LEVEL ? "MAX" : `L${this.level}`, this.x, this.y + 5);
+        ctx.restore();
+    }
+}
+
+class Bullet {
+    constructor(x, y, target, dmg, color, typeIdx, level) {
+        this.x = x; this.y = y; this.target = target; this.dmg = dmg; this.color = color;
+        this.typeIdx = typeIdx; this.level = level;
+        this.speed = 12;
+    }
+
+    move() {
+        let dx = this.target.x - this.x; let dy = this.target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < this.speed) { this.hitSplice(); return true; }
+        this.x += (dx/dist) * this.speed; this.y += (dy/dist) * this.speed;
+        return false;
+    }
+
+    hitSplice() {
+        if (this.typeIdx === 0) { 
+            let splashRange = 65;
+            enemies.forEach(e => {
+                if (Math.hypot(e.x - this.x, e.y - this.y) <= splashRange) {
+                    e.hp -= this.dmg;
+                    e.burnTimer = 140; 
+                    e.burnDamage = 0.18 * this.level; 
+                }
+            });
+        } 
+        else if (this.typeIdx === 1) { 
+            let splashRange = 75;
+            enemies.forEach(e => {
+                if (Math.hypot(e.x - this.x, e.y - this.y) <= splashRange) {
+                    e.hp -= this.dmg;
+                    e.slowTimer = 120; 
+                }
+            });
+        } 
+        else if (this.typeIdx === 3) { 
+            this.target.hp -= this.dmg;
+            this.target.poisonTimer = 300; 
+            this.target.poisonDamage = 0.45 * this.level; 
+        }
+    }
+
+    draw() {
+        ctx.fillStyle = this.color; ctx.beginPath(); ctx.arc(this.x, this.y, this.typeIdx === 0 ? 7 : 4, 0, Math.PI*2); ctx.fill();
+    }
+}
+
+function saveGame() {
+    const saveData = {
+        gold, lives, towerCost, wave, currentStage, upgradeLevels, upgradeCosts,
+        towers: towers.map(t => ({ gridX: t.gridX, gridY: t.gridY, typeIdx: t.typeIdx, level: t.level }))
+    };
+    localStorage.setItem("defence_save_data", JSON.stringify(saveData));
+}
+
+function loadGame() {
+    const dataStr = localStorage.getItem("defence_save_data");
+    if (!dataStr) return false;
+    try {
+        const data = JSON.parse(dataStr);
+        gold = data.gold; lives = data.lives; towerCost = data.towerCost; wave = data.wave;
+        currentStage = data.currentStage || 1;
+        upgradeLevels = data.upgradeLevels; upgradeCosts = data.upgradeCosts;
+        
+        for(let i=0; i<4; i++) {
+            TOWER_TYPES[i].baseDmg = [16, 12, 19, 24][i] + (upgradeLevels[i] * 5);
+        }
+
+        towers = data.towers.map(t => new Tower(t.gridX, t.gridY, t.typeIdx, t.level));
+        return true;
+    } catch(e) { return false; }
+}
+
+function startWave() {
+    enemiesToSpawn = (wave === 10 || wave === 20) ? 1 : 12 + wave;
+    waveTimer = 0;
+
+    // 💡 10, 20웨이브(보스 라운드) 시작 시 경고 타이머 세팅 (150프레임 = 약 2.5초 연출)
+    if (wave === 10 || wave === 20) {
+        bossWarningTimer = 150; 
+    }
+
+    saveGame(); 
+}
+
+function update() {
+    if (gameState !== "playing") return;
+    
+    // 💡 보스 경고 연출 중에는 타이머만 차감하고 몹 스폰을 일시 중단함
+    if (bossWarningTimer > 0) {
+        bossWarningTimer--;
+        return; 
+    }
+
+    waveTimer++;
+    
+    // 💡 뒤로 갈수록 스폰이 한번에 뭉쳐서 많이 되도록 변경 (5웨이브 단위로 동시 스폰량 1씩 증가, 최대 4마리씩 등장)
+    let spawnBunch = (wave === 10 || wave === 20) ? 1 : Math.min(5, 1 + Math.floor(wave / 4));
+
+    if (enemiesToSpawn > 0 && waveTimer % 50 === 0) { 
+        for (let i = 0; i < spawnBunch; i++) {
+            if (enemiesToSpawn <= 0) break;
+
+            if (wave === 10) enemies.push(new Enemy(false, true));
+            else if (wave === 20) enemies.push(new Enemy(true, false));
+            else enemies.push(new Enemy());
+            
+            enemiesToSpawn--;
+        }
+    }
+
+    if (enemiesToSpawn === 0 && enemies.length === 0) {
+        if (wave === 20) {
+            gameState = "victory";
+            localStorage.removeItem("defence_save_data"); 
+        } else { 
+            wave++; 
+            gold += 150; 
+            towerCost += 5; 
+            startWave(); 
+        } 
+    }
+
+    enemies = enemies.filter(e => {
+        if (e.move()) { lives -= (e.isBoss ? 10 : (e.isMidBoss ? 5 : 1)); return false; }
+        if (e.hp <= 0) { 
+            gold += e.isBoss ? 500 : (e.isMidBoss ? 200 : 22); 
+            return false; 
+        }
+        return true;
+    });
+
+    bullets = bullets.filter(b => !b.move());
+    towers.forEach(t => { if(!t.isDragging) t.update(); });
+    lightnings = lightnings.filter(l => { l.timer--; return l.timer > 0; });
+
+    if (lives <= 0) {
+        gameState = "gameover";
+        localStorage.removeItem("defence_save_data"); 
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (gameState === "lobby") {
+        ctx.fillStyle = "white"; ctx.font = "bold 36px Arial"; ctx.textAlign = "center";
+        ctx.fillText("랜덤 합성 디펜스 : 타이틀 메뉴", 420, 150);
+        
+        ctx.fillStyle = "#ff4757"; ctx.fillRect(270, 240, 300, 55);
+        ctx.fillStyle = "white"; ctx.font = "bold 18px Arial"; ctx.fillText("새 게임 시작", 420, 274);
+        
+        const hasSave = localStorage.getItem("defence_save_data") !== null;
+        ctx.fillStyle = hasSave ? "#2ed573" : "#444"; 
+        ctx.fillRect(270, 320, 300, 55);
+        ctx.fillStyle = hasSave ? "white" : "#888";
+        ctx.fillText("게임 이어하기", 420, 354);
+        
+        ctx.fillStyle = "#57606f"; ctx.fillRect(270, 400, 300, 55);
+        ctx.fillStyle = "white"; ctx.fillText("게임 종료", 420, 434);
+        
+    } else if (gameState === "stage_select") {
+        ctx.fillStyle = "white"; ctx.font = "bold 36px Arial"; ctx.textAlign = "center";
+        ctx.fillText("스테이지 선택", 420, 150);
+
+        ctx.fillStyle = "#3498db"; ctx.fillRect(270, 240, 300, 55);
+        ctx.fillStyle = "white"; ctx.font = "bold 18px Arial"; ctx.fillText("1 스테이지 도전", 420, 274);
+
+        ctx.fillStyle = "#444"; ctx.fillRect(270, 320, 300, 55);
+        ctx.fillStyle = "#888"; ctx.fillText("2 스테이지 (잠금)", 420, 354);
+
+        ctx.fillStyle = "#95a5a6"; ctx.fillRect(270, 420, 300, 55);
+        ctx.fillStyle = "white"; ctx.fillText("이전으로", 420, 454);
+
+    } else {
+        ctx.strokeStyle = "#252530";
+        for(let r=0; r<MAP_ROWS; r++) {
+            for(let c=0; c<MAP_COLS; c++) ctx.strokeRect(c*TILE_SIZE, r*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+        }
+
+        ctx.fillStyle = "#1e1e24";
+        PATH_TILES.forEach(p => ctx.fillRect(p.x * TILE_SIZE, p.y * TILE_SIZE, TILE_SIZE, TILE_SIZE));
+
+        ctx.fillStyle = "rgba(255,255,255,0.15)";
+        ctx.font = "14px Arial"; ctx.textAlign = "center";
+        ctx.fillText("▶입구", PATH_TILES[0].x * TILE_SIZE + 40, PATH_TILES[0].y * TILE_SIZE + 45);
+
+        towers.forEach(t => t.draw());
+        enemies.forEach(e => e.draw());
+        bullets.forEach(b => b.draw());
+
+        lightnings.forEach(l => {
+            ctx.strokeStyle = "#feca57"; ctx.lineWidth = 3;
+            ctx.shadowBlur = 10; ctx.shadowColor = "#feca57";
+            ctx.beginPath(); ctx.moveTo(l.sx, l.sy);
+            let midX = (l.sx + l.tx) / 2 + (Math.random() * 20 - 10);
+            let midY = (l.sy + l.ty) / 2 + (Math.random() * 20 - 10);
+            ctx.lineTo(midX, midY); ctx.lineTo(l.tx, l.ty); ctx.stroke();
+            ctx.shadowBlur = 0;
+        });
+
+        // 💡 보스 경고 점멸 및 알림 메시지 스크린 렌더링
+        if (gameState === "playing" && bossWarningTimer > 0) {
+            if (Math.floor(bossWarningTimer / 15) % 2 === 0) {
+                ctx.fillStyle = "rgba(255, 0, 0, 0.24)";
+                ctx.fillRect(0, 0, 560, 640); // 인게임 플레이 맵 구역만 붉은색 점멸 효과 적용
+            }
+            ctx.fillStyle = "#ff4757"; ctx.font = "bold 32px Arial"; ctx.textAlign = "center";
+            ctx.shadowBlur = 15; ctx.shadowColor = "#ff4757";
+            ctx.fillText(" ⚠️WARNING: BOSS APPROACHING⚠️ ", 280, 310);
+            ctx.shadowBlur = 0;
+        }
+
+        // 우측 대시보드 구조 패널
+        ctx.fillStyle = "#4b4b5e"; ctx.fillRect(570, 10, 255, 45); 
+        ctx.fillStyle = "white"; ctx.font = "bold 15px Arial"; ctx.textAlign = "center";
+        ctx.fillText("⏸ 일시정지 (P)", 697, 37);
+
+        ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(570, 65, 255, 115);
+        ctx.fillStyle = "white"; ctx.textAlign = "left"; ctx.font = "bold 15px Arial";
+        ctx.fillText(`💰 자금: ${gold} G`, 585, 93);
+        ctx.fillText(`💟 라이프: ${lives} / 10`, 585, 123);
+        ctx.fillText(`🌊 웨이브: ${wave} / 20`, 585, 153);
+
+        ctx.fillStyle = "#ff4757"; ctx.fillRect(570, 190, 255, 50);
+        ctx.fillStyle = "white"; ctx.textAlign = "center"; ctx.font = "bold 15px Arial";
+        ctx.fillText(`랜덤 타워 소환 (${towerCost}G)`, 697, 221);
+
+        ctx.fillStyle = "rgba(255,255,255,0.03)"; ctx.fillRect(570, 250, 255, 380);
+        ctx.strokeStyle = "rgba(255,255,255,0.1)"; ctx.strokeRect(570, 250, 255, 380);
+
+        for (let i = 0; i < 4; i++) {
+            let startY = 255 + (i * 92);
+            ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(575, startY, 245, 84);
+            ctx.strokeStyle = TOWER_TYPES[i].color; ctx.lineWidth = 2; ctx.strokeRect(575, startY, 245, 84);
+            
+            ctx.fillStyle = TOWER_TYPES[i].color; ctx.beginPath(); ctx.arc(595, startY + 42, 10, 0, Math.PI*2); ctx.fill();
+
+            ctx.fillStyle = "white"; ctx.textAlign = "left"; ctx.font = "bold 14px Arial";
+            ctx.fillText(`[${TOWER_TYPES[i].name}] 공격력 강화 (+${upgradeLevels[i]})`, 615, startY + 36);
+            
+            if (upgradeLevels[i] >= MAX_UPGRADE) {
+                ctx.fillStyle = "#57606f"; ctx.fillRect(615, startY + 52, 195, 24);
+                ctx.fillStyle = "#ffffff"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
+                ctx.fillText("MAX", 712, startY + 68);
+            } else {
+                ctx.fillStyle = gold >= upgradeCosts[i] ? TOWER_TYPES[i].color : "#4b4b5e";
+                ctx.fillRect(615, startY + 52, 195, 24);
+                ctx.fillStyle = "white"; ctx.font = "bold 12px Arial"; ctx.textAlign = "center";
+                ctx.fillText(`강화 비용: ${upgradeCosts[i]}G`, 712, startY + 68);
+            }
+        }
+    }
+    
+    if (gameState === "paused") {
+        ctx.fillStyle = "rgba(0,0,0,0.85)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = "white"; ctx.font = "bold 40px Arial"; ctx.textAlign = "center";
+        ctx.fillText("게임 일시정지", 420, 200);
+        
+        ctx.fillStyle = "#2ed573"; ctx.fillRect(320, 270, 200, 50);
+        ctx.fillStyle = "white"; ctx.font = "bold 18px Arial"; ctx.fillText("계속하기 (P)", 420, 302);
+        
+        ctx.fillStyle = "#ff4757"; ctx.fillRect(320, 350, 200, 50);
+        ctx.fillStyle = "white"; ctx.fillText("메인 메뉴로", 420, 382);
+    }
+
+    if (gameState === "gameover" || gameState === "victory") {
+        ctx.fillStyle = "rgba(0,0,0,0.9)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.fillStyle = gameState === "victory" ? "#1dd1a1" : "#ff4757";
+        ctx.font = "bold 45px Arial"; ctx.textAlign = "center";
+        ctx.fillText(gameState === "victory" ? "STAGE CLEAR!" : "YOU DIED", 420, 290);
+        ctx.fillStyle = "white"; ctx.font = "18px Arial"; ctx.fillText("화면을 클릭하면 대기실 로비로 이동합니다", 420, 350);
+    }
+}
+
+window.addEventListener("keydown", e => {
+    if (e.key === "p" || e.key === "P") { togglePause(); }
+});
+
+function togglePause() {
+    if (gameState === "playing") gameState = "paused";
+    else if (gameState === "paused") gameState = "playing";
+}
+
+function buyUpgrade(idx) {
+    if (upgradeLevels[idx] >= MAX_UPGRADE) return; 
+    if (gold >= upgradeCosts[idx]) {
+        gold -= upgradeCosts[idx];
+        upgradeLevels[idx]++;
+        TOWER_TYPES[idx].baseDmg += 5; 
+        upgradeCosts[idx] += 50;       
+        
+        towers.forEach(t => { if(t.typeIdx === idx) t.updateStats(); });
+        saveGame(); 
+    }
+}
+
+canvas.addEventListener("mousedown", e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    
+    if (gameState === "lobby") {
+        if (mx > 270 && mx < 570 && my > 240 && my < 295) {
+            const dataStr = localStorage.getItem("defence_save_data");
+            if (dataStr) {
+                try {
+                    const data = JSON.parse(dataStr);
+                    let select = confirm(`진행하던 게임이 있습니다. (1스테이지의 ${data.wave} 웨이브)\n새 게임을 진행하시겠습니까? (이전 정보는 유실됩니다)`);
+                    if (!select) return;
+                } catch(err){}
+            }
+            gameState = "stage_select";
+        }
+        else if (mx > 270 && mx < 570 && my > 320 && my < 375) {
+            if (localStorage.getItem("defence_save_data") !== null) {
+                if (loadGame()) { gameState = "playing"; startWave(); }
+            }
+        }
+        else if (mx > 270 && mx < 570 && my > 400 && my < 455) {
+            alert("게임을 종료합니다. 탭이나 브라우저를 닫아주세요.");
+        }
+    } else if (gameState === "stage_select") {
+        if (mx > 270 && mx < 570 && my > 240 && my < 295) {
+            localStorage.removeItem("defence_save_data");
+            upgradeLevels = [0, 0, 0, 0]; upgradeCosts = [100, 100, 100, 100];
+            TOWER_TYPES[0].baseDmg = 16; TOWER_TYPES[1].baseDmg = 12; TOWER_TYPES[2].baseDmg = 19; TOWER_TYPES[3].baseDmg = 24;
+            currentStage = 1; gameState = "playing"; wave = 1; gold = 200; lives = 10; towerCost = 100; towers = []; startWave();
+        }
+        else if (mx > 270 && mx < 570 && my > 320 && my < 375) {
+            return;
+        }
+        else if (mx > 270 && mx < 570 && my > 420 && my < 475) {
+            gameState = "lobby";
+        }
+    } else if (gameState === "playing") {
+        if (mx > 570 && mx < 825 && my > 10 && my < 55) { togglePause(); return; }
+        if (mx > 570 && mx < 825 && my > 190 && my < 240) { spawnTower(); return; }
+        
+        for(let i=0; i<4; i++) {
+            let startY = 255 + (i * 92);
+            if (mx > 575 && mx < 820 && my > startY && my < startY + 84) {
+                buyUpgrade(i);
+                return;
+            }
+        }
+
+        dragTower = towers.find(t => Math.hypot(t.x - mx, t.y - my) < 28);
+        if (dragTower) dragTower.isDragging = true;
+    } else if (gameState === "paused") {
+        if (mx > 320 && mx < 520 && my > 270 && my < 320) { gameState = "playing"; }
+        else if (mx > 320 && mx < 520 && my > 350 && my < 400) {
+            let leaveConfirm = confirm("게임 도중 메인 메뉴로 돌아가면 현재 진행 사항을 완전히 잃게 됩니다. 그래도 나가시겠습니까?");
+            if (leaveConfirm) { gameState = "lobby"; }
+        }
+    } else { gameState = "lobby"; }
+});
+
+canvas.addEventListener("mousemove", e => {
+    if (dragTower) {
+        const rect = canvas.getBoundingClientRect();
+        dragTower.x = e.clientX - rect.left; dragTower.y = e.clientY - rect.top;
+    }
+});
+
+canvas.addEventListener("mouseup", e => {
+    if (!dragTower) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let gx = Math.floor(mx/TILE_SIZE), gy = Math.floor(my/TILE_SIZE);
+    
+    let onPath = PATH_TILES.some(p => p.x === gx && p.y === gy);
+    let target = towers.find(t => t !== dragTower && t.gridX === gx && t.gridY === gy);
+
+    if (!onPath && target && target.typeIdx === dragTower.typeIdx && target.level === dragTower.level && target.level < MAX_LEVEL) {
+        target.level++; 
+        target.updateStats(); 
+        towers = towers.filter(t => t !== dragTower);
+        saveGame(); 
+    } else {
+        if (!onPath && gx < MAP_COLS && gy < MAP_ROWS && !target) { dragTower.gridX = gx; dragTower.gridY = gy; }
+        dragTower.x = dragTower.gridX * TILE_SIZE + TILE_SIZE/2;
+        dragTower.y = dragTower.gridY * TILE_SIZE + TILE_SIZE/2;
+        saveGame(); 
+    }
+    dragTower.isDragging = false; dragTower = null;
+});
+
+function spawnTower() {
+    if (gold < towerCost) return; 
+    let slots = [];
+    for(let r=0; r<MAP_ROWS; r++) {
+        for(let c=0; c<MAP_COLS; c++) {
+            let onPath = PATH_TILES.some(p => p.x === c && p.y === r);
+            let hasTower = towers.find(t => t.gridX === c && t.gridY === r);
+            if (!onPath && !hasTower) slots.push({c,r});
+        }
+    }
+    if (slots.length > 0) {
+        let s = slots[Math.floor(Math.random()*slots.length)];
+        towers.push(new Tower(s.c, s.r, Math.floor(Math.random()*4)));
+        gold -= towerCost;
+        saveGame(); 
+    }
+}
+
+function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+gameLoop();
+</script>
+</body>
+</html>

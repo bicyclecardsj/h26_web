@@ -1,0 +1,4 @@
+.complete h3, .complete p {
+    text-decoration: line-through;
+    color: gray;
+}

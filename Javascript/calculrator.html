@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>계산기</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Pretendard', sans-serif;
+        }
+
+        .calculator {
+            background-color: #ffffff;
+            padding: 25px;
+            border-radius: 25px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.2);
+            width: 340px;
+        }
+
+        #display {
+            width: 100%;
+            height: 70px;
+            border: none;
+            background-color: #f8f9fa;
+            border-radius: 15px;
+            text-align: right;
+            padding: 15px;
+            font-size: 28px;
+            font-weight: 600;
+            color: #2d3436;
+            margin-bottom: 20px;
+            box-shadow: inset 2px 2px 5px rgba(0,0,0,0.05);
+            outline: none;
+        }
+
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+
+        input[type="button"], button {
+            height: 60px;
+            border: none;
+            border-radius: 15px;
+            background-color: #f1f3f5;
+            font-size: 18px;
+            font-weight: 600;
+            color: #495057;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        input[type="button"]:hover, button:hover {
+            background-color: #e9ecef;
+            transform: translateY(-2px);
+        }
+
+        input[type="button"]:active, button:active {
+            transform: translateY(0);
+            filter: brightness(0.9);
+        }
+
+        .btn-op { color: #4c6ef5; }
+        .btn-clear { color: #fa5252; }
+        .btn-equal { 
+            background-color: #4c6ef5 !important; 
+            color: white !important; 
+        }
+        .btn-convert {
+            background-color: #343a40 !important;
+            color: white !important;
+            font-size: 14px !important;
+        }
+
+        #expand-menu {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        #expand-menu button {
+            height: 45px;
+            font-size: 13px;
+            background-color: #dee2e6;
+        }
+    </style>
+    <script>
+        let isResult = false;
+
+        function toggleButtons() {
+            const menu = document.getElementById('expand-menu');
+            menu.style.display = (menu.style.display === "none") ? "grid" : "none";
+        }
+
+        function addNumber(num) {
+            const display = document.getElementById('display');
+            if (isResult) {
+                display.value = "";
+                isResult = false;
+            }
+            display.value += num;
+        }
+
+        function addOperator(op) {
+            const display = document.getElementById('display');
+            isResult = false;
+            display.value += op;
+        }
+
+        function calculate() {
+            const display = document.getElementById('display');
+            if (display.value === "") return;
+            try {
+                if (/[+*/-]{2,}/.test(display.value)) {
+                    throw new Error("Invalid"); 
+                }
+                const result = eval(display.value);    
+                if (!isFinite(result) || isNaN(result)) {
+                    throw new Error("Invalid");
+                }       
+                display.value = result;
+                isResult = true;
+            } catch (e) {
+                alert("올바르지 않은 수식입니다.");
+                display.value = "";
+                isResult = false;
+            }
+        }
+
+        function clearDisplay() {
+            document.getElementById('display').value = "";
+            isResult = false;
+        }
+
+        function backspace() {
+            const display = document.getElementById('display');
+            display.value = display.value.slice(0, -1);
+        }
+
+        function convert(base) {
+            const display = document.getElementById('display');
+            if (display.value === "") return;
+            try {
+                let currentNum = Number(eval(display.value));
+                if (isNaN(currentNum)) throw new Error();
+                display.value = currentNum.toString(base).toUpperCase();
+                isResult = true; 
+            } catch (e) {
+                alert("올바르지 않은 수식입니다.");
+                display.value = "";
+            }
+        }
+
+        window.addEventListener('keydown', function(event) {
+            const key = event.key;
+            if (!isNaN(key) || key === '.') addNumber(key);
+            else if (['+', '-', '*', '/'].includes(key)) addOperator(key);
+            else if (key === 'Enter' || key === '=') {
+                event.preventDefault();
+                calculate();
+            }
+            else if (key === 'Backspace') backspace();
+            else if (key === 'Escape') clearDisplay();
+        });
+    </script>
+</head>
+<body>
+
+<div class="calculator">
+    <input type="text" id="display" readonly>
+    
+    <div class="button-grid">
+        <!-- 첫 번째 줄 -->
+        <input type="button" value="C" class="btn-clear" onclick="clearDisplay()">
+        <input type="button" value="←" onclick="backspace()">
+        <input type="button" value="/" class="btn-op" onclick="addOperator('/')">
+        <input type="button" value="*" class="btn-op" onclick="addOperator('*')">
+
+        <!-- 두 번째 줄 -->
+        <input type="button" value="7" onclick="addNumber('7')">
+        <input type="button" value="8" onclick="addNumber('8')">
+        <input type="button" value="9" onclick="addNumber('9')">
+        <input type="button" value="-" class="btn-op" onclick="addOperator('-')">
+
+        <!-- 세 번째 줄 -->
+        <input type="button" value="4" onclick="addNumber('4')">
+        <input type="button" value="5" onclick="addNumber('5')">
+        <input type="button" value="6" onclick="addNumber('6')">
+        <input type="button" value="+" class="btn-op" onclick="addOperator('+')">
+
+        <!-- 네 번째 줄 -->
+        <input type="button" value="1" onclick="addNumber('1')">
+        <input type="button" value="2" onclick="addNumber('2')">
+        <input type="button" value="3" onclick="addNumber('3')">
+        <input type="button" value="진법" class="btn-convert" onclick="toggleButtons()">
+
+        <!-- 다섯 번째 줄 -->
+        <input type="button" value="0" onclick="addNumber('0')">
+        <input type="button" value="." onclick="addNumber('.')">
+        <input type="button" value="=" class="btn-equal" style="grid-column: span 2;" onclick="calculate()">
+    </div>
+
+    <div id="expand-menu" style="display: none;">
+        <button type="button" onclick="convert(2)">2진법</button>
+        <button type="button" onclick="convert(8)">8진법</button>
+        <button type="button" onclick="convert(16)">16진법</button>
+    </div>
+</div>
+
+</body>
+</html>

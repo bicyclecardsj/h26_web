@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="todoStyle.css">
+    <script src="todoScript.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js" integrity="sha384-I7E8VVD/ismYTF4hNIPjVp/Zjvgyol6VFvRkX/vR+Vc4jQkC+hVqc2pM8ODewa9r" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.min.js" integrity="sha384-G/EV+4j2dNv+tEPo3++6LCgdCROaejBqfUeNjuKAiuXbjrxilcCdDz6ZAVfHWe1Y" crossorigin="anonymous"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+</head>
+<body>
+    <div class="container">
+        <h1>Todo List</h1>
+
+        <div>
+            <input type="text" placeholder="할 일을 입력하세요." id="todoInput" class="form-control w-auto rounded-6 border-dark d-inline-block align-top">
+            <select id="category" class="form-select border-dark w-auto d-inline-block align-top">
+                <option value="공부">공부</option>
+                <option value="과제">과제</option>
+                <option value="운동">운동</option>
+                <option value="취미">취미</option>
+                <option value="기타">기타</option>
+            </select>
+            <select id="importance" class="form-select border-dark w-auto d-inline-block align-top">
+                <option value="높음">높음</option>
+                <option value="중간">중간</option>
+                <option value="낮음">낮음</option>
+            </select>
+            <input type="date" id="date" class="form-control w-auto rounded-6 border-dark d-inline-block align-top">
+            <button type="button" id="addBtn" class="btn btn-outline-success align-top">추가</button>
+            <button type="button" id="corrBtn" class="btn btn-outline-info align-top">수정완료</button><br>
+        </div>
+        <div>
+            <input type="text" placeholder="검색" id="todoSearch" class="form-control w-auto rounded-6 border-dark d-inline-block my-2" onkeyup="renderTodos()">
+        </div>
+        <div class="btn-group" style="width: 203px;" role="group" aria-label="Basic example">
+            <button type="button" class="btn btn-outline-dark" id="tab-all" onclick="setTab('all')">전체</button>
+            <button type="button" class="btn btn-outline-dark" id="tab-active" onclick="setTab('active')">진행중</button>
+            <button type="button" class="btn btn-outline-dark" id="tab-completed" onclick="setTab('completed')">완료</button>
+        </div>
+        <ul id="todolist" class="list-group mt-4"></ul>
+    </div>
+</body>
+</html>

@@ -1,0 +1,1494 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>원소 타워 디펜스</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            text-align: center;
+            background: #050508;
+            color: #fff;
+            font-family: 'Noto Sans KR', sans-serif;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            width: 100vw;
+        }
+        canvas {
+            display: block;
+            cursor: default;
+            image-rendering: pixelated;
+        }
+        /* 파티클 배경 */
+        #bgCanvas {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            pointer-events: none;
+            z-index: 0;
+        }
+        #gameCanvas {
+            position: relative;
+            z-index: 1;
+            border-radius: 16px;
+            box-shadow:
+                0 0 0 1px rgba(255,255,255,0.05),
+                0 0 60px rgba(0,0,0,0.9),
+                0 0 120px rgba(0,0,0,0.6);
+        }
+    </style>
+</head>
+<body>
+<canvas id="bgCanvas"></canvas>
+<canvas id="gameCanvas" width="880" height="660"></canvas>
+
+<script>
+// ===== 배경 파티클 =====
+const bgCanvas = document.getElementById("bgCanvas");
+const bgCtx = bgCanvas.getContext("2d");
+bgCanvas.width = window.innerWidth;
+bgCanvas.height = window.innerHeight;
+
+const bgParticles = [];
+for (let i = 0; i < 80; i++) {
+    bgParticles.push({
+        x: Math.random() * bgCanvas.width,
+        y: Math.random() * bgCanvas.height,
+        r: Math.random() * 1.5 + 0.3,
+        vx: (Math.random() - 0.5) * 0.2,
+        vy: -Math.random() * 0.3 - 0.1,
+        alpha: Math.random() * 0.4 + 0.1,
+        color: ['#ff4757','#54a0ff','#feca57','#1dd1a1'][Math.floor(Math.random()*4)]
+    });
+}
+
+function drawBg() {
+    bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+    bgParticles.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        if (p.y < 0) { p.y = bgCanvas.height; p.x = Math.random() * bgCanvas.width; }
+        bgCtx.globalAlpha = p.alpha;
+        bgCtx.fillStyle = p.color;
+        bgCtx.beginPath();
+        bgCtx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        bgCtx.fill();
+    });
+    bgCtx.globalAlpha = 1;
+    requestAnimationFrame(drawBg);
+}
+drawBg();
+
+// ===== 게임 메인 =====
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const TILE_SIZE = 80;
+const panelX = 560, panelW = 300, panelH = 640;
+const MAP_ROWS = 8;
+const MAP_COLS = 7;
+const MAX_LEVEL = 5;
+const MAX_UPGRADE = 5;
+
+// ===== 파티클 시스템 =====
+let particles = [];
+function addParticle(x, y, color, count = 6, speed = 2.5, life = 25) {
+    for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const s = Math.random() * speed + 0.5;
+        particles.push({
+            x, y,
+            vx: Math.cos(angle) * s,
+            vy: Math.sin(angle) * s,
+            alpha: 1,
+            color,
+            life,
+            maxLife: life,
+            r: Math.random() * 3 + 1
+        });
+    }
+}
+
+function updateParticles() {
+    particles = particles.filter(p => {
+        p.x += p.vx; p.y += p.vy;
+        p.vx *= 0.92; p.vy *= 0.92;
+        p.alpha = p.life / p.maxLife;
+        p.life--;
+        return p.life > 0;
+    });
+}
+
+function drawParticles() {
+    particles.forEach(p => {
+        ctx.save();
+        ctx.globalAlpha = p.alpha;
+        ctx.fillStyle = p.color;
+        ctx.shadowBlur = 6; ctx.shadowColor = p.color;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+    });
+}
+
+// ===== 타워 설정 =====
+let TOWER_TYPES = [
+    { name: "불", color: "#ff4757", glowColor: "rgba(255,71,87,0.8)", baseDmg: 16, emoji: "🔥" },
+    { name: "얼음", color: "#54a0ff", glowColor: "rgba(84,160,255,0.8)", baseDmg: 12, emoji: "❄️" },
+    { name: "전기", color: "#feca57", glowColor: "rgba(254,202,87,0.8)", baseDmg: 19, emoji: "⚡" },
+    { name: "독", color: "#1dd1a1", glowColor: "rgba(29,209,161,0.8)", baseDmg: 24, emoji: "☠️" }
+];
+
+let upgradeLevels = [0, 0, 0, 0];
+let upgradeCosts = [100, 100, 100, 100];
+
+const PATH_TILES = [
+    {x:0,y:1},{x:1,y:1},{x:2,y:1},{x:3,y:1},{x:4,y:1},{x:5,y:1},
+    {x:5,y:2},{x:5,y:3},
+    {x:4,y:3},{x:3,y:3},{x:2,y:3},{x:1,y:3},
+    {x:1,y:4},{x:1,y:5},
+    {x:2,y:5},{x:3,y:5},{x:4,y:5},{x:5,y:5},{x:6,y:5},
+    {x:6,y:6},{x:6,y:7}
+];
+
+let gameState = "lobby";
+let gold = 200;
+let lives = 10;
+let towerCost = 100;
+let wave = 1;
+let currentStage = 1;
+let enemies = [];
+let towers = [];
+let bullets = [];
+let lightnings = [];
+let dragTower = null;
+let waveTimer = 0;
+let enemiesToSpawn = 0;
+let bossWarningTimer = 0;
+let waveWarningTimer = 0;
+let gameTime = 0; // 애니메이션용 타임
+
+// ===== 범위 미리보기 =====
+let hoveredTower = null;
+
+// ===== 적 =====
+class Enemy {
+    constructor(isBoss = false, isMidBoss = false) {
+        this.pathIndex = 0;
+        this.x = PATH_TILES[0].x * TILE_SIZE + TILE_SIZE/2;
+        this.y = PATH_TILES[0].y * TILE_SIZE + TILE_SIZE/2 - 50;
+        this.isBoss = isBoss;
+        this.isMidBoss = isMidBoss;
+        this.animOffset = Math.random() * Math.PI * 2;
+
+        let hpMultiplier = isBoss ? 30 : (isMidBoss ? 10 : 1);
+        this.hp = (80 + (wave * 90) * Math.pow(1.20, wave)) * hpMultiplier;
+        this.maxHp = this.hp;
+        this.baseSpeed = isBoss ? 0.5 : 1.1 + (wave * 0.2);
+        this.speed = this.baseSpeed;
+        this.radius = isBoss ? 32 : (isMidBoss ? 23 : 14);
+
+        this.burnTimer = 0; this.burnDamage = 0;
+        this.slowTimer = 0;
+        this.poisonTimer = 0; this.poisonDamage = 0;
+        this.hitFlash = 0;
+    }
+
+    move() {
+        if (this.slowTimer > 0) { this.slowTimer--; this.speed = this.baseSpeed * 0.5; }
+        else { this.speed = this.baseSpeed; }
+        if (this.burnTimer > 0) { this.burnTimer--; this.hp -= this.burnDamage; }
+        if (this.poisonTimer > 0) { this.poisonTimer--; this.hp -= this.poisonDamage; }
+        if (this.hitFlash > 0) this.hitFlash--;
+
+        let target = PATH_TILES[this.pathIndex];
+        if (!target) return true;
+        let tx = target.x * TILE_SIZE + TILE_SIZE/2;
+        let ty = target.y * TILE_SIZE + TILE_SIZE/2;
+        let dist = Math.hypot(tx - this.x, ty - this.y);
+        if (dist < this.speed) {
+            this.pathIndex++;
+            if (this.pathIndex >= PATH_TILES.length) return true;
+        } else {
+            this.x += ((tx - this.x)/dist) * this.speed;
+            this.y += ((ty - this.y)/dist) * this.speed;
+        }
+        return false;
+    }
+
+    draw() {
+        const t = gameTime * 0.05 + this.animOffset;
+        ctx.save();
+
+        // 상태이상 글로우
+        let glowColor = null;
+        let bodyColor;
+        if (this.poisonTimer > 0) { glowColor = "#26de81"; bodyColor = "#1a9e5c"; }
+        else if (this.slowTimer > 0) { glowColor = "#54a0ff"; bodyColor = "#2667cc"; }
+        else if (this.burnTimer > 0) { glowColor = "#ff6b35"; bodyColor = "#cc3300"; }
+        else {
+            bodyColor = this.isBoss ? "#c0392b" : (this.isMidBoss ? "#e67e22" : "#95a5b8");
+        }
+
+        // 히트 플래시
+        if (this.hitFlash > 0) {
+            ctx.globalAlpha = 0.5 + 0.5 * (this.hitFlash / 8);
+        }
+
+        // 외부 링 / 글로우
+        if (glowColor) {
+            ctx.shadowBlur = 15; ctx.shadowColor = glowColor;
+        }
+
+        if (this.isBoss) {
+            // 보스: 크라운 형태 + 회전 링
+            const r = this.radius;
+            ctx.strokeStyle = "rgba(255,80,80,0.6)";
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, r + 6 + i*8 + Math.sin(t + i) * 2, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            // 본체
+            const grad = ctx.createRadialGradient(this.x - r*0.3, this.y - r*0.3, 0, this.x, this.y, r);
+            grad.addColorStop(0, "#ff6b6b");
+            grad.addColorStop(0.6, "#c0392b");
+            grad.addColorStop(1, "#7b0000");
+            ctx.fillStyle = grad;
+            ctx.shadowBlur = 20; ctx.shadowColor = "#ff0000";
+            ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+            // 크라운 뿔
+            ctx.fillStyle = "#ffcc00";
+            for (let i = 0; i < 5; i++) {
+                const a = (Math.PI * 2 / 5) * i - Math.PI / 2 + t * 0.3;
+                ctx.beginPath();
+                ctx.arc(this.x + Math.cos(a) * r * 0.85, this.y + Math.sin(a) * r * 0.85, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            // BOSS 텍스트
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 10px 'Noto Sans KR'";
+            ctx.textAlign = "center";
+            ctx.shadowBlur = 0;
+            ctx.fillText("BOSS", this.x, this.y + 4);
+
+        } else if (this.isMidBoss) {
+            // 중간보스: 회전 외곽 + 사각형
+            const r = this.radius;
+            ctx.strokeStyle = "rgba(230,120,30,0.7)";
+            ctx.lineWidth = 2;
+            ctx.save();
+            ctx.translate(this.x, this.y);
+            ctx.rotate(t * 0.5);
+            for (let i = 0; i < 4; i++) {
+                const a = (Math.PI / 2) * i;
+                const d = r + 8;
+                ctx.beginPath();
+                ctx.moveTo(Math.cos(a) * d, Math.sin(a) * d);
+                ctx.lineTo(Math.cos(a + Math.PI/2) * d, Math.sin(a + Math.PI/2) * d);
+                ctx.stroke();
+            }
+            ctx.restore();
+            const grad = ctx.createRadialGradient(this.x - r*0.3, this.y - r*0.3, 0, this.x, this.y, r);
+            grad.addColorStop(0, "#f39c12");
+            grad.addColorStop(1, "#e67e22");
+            ctx.fillStyle = grad;
+            ctx.shadowBlur = 12; ctx.shadowColor = "#f39c12";
+            ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 9px 'Noto Sans KR'";
+            ctx.textAlign = "center";
+            ctx.shadowBlur = 0;
+            ctx.fillText("MID", this.x, this.y + 3);
+
+        } else {
+            // 일반 적: 육각형 모양
+            const r = this.radius;
+            const grad = ctx.createRadialGradient(this.x - r*0.3, this.y - r*0.3, 0, this.x, this.y, r);
+            grad.addColorStop(0, lighten(bodyColor, 40));
+            grad.addColorStop(1, bodyColor);
+            ctx.fillStyle = grad;
+            if (glowColor) { ctx.shadowBlur = 10; ctx.shadowColor = glowColor; }
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI / 3) * i - Math.PI / 6;
+                const px = this.x + r * Math.cos(a);
+                const py = this.y + r * Math.sin(a);
+                i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // HP 바
+        const barW = this.isBoss ? 64 : (this.isMidBoss ? 46 : 32);
+        const barH = 4;
+        const barX = this.x - barW/2;
+        const barY = this.y - this.radius - 10;
+        const hpPct = Math.max(0, this.hp / this.maxHp);
+
+        ctx.shadowBlur = 0;
+        // 배경
+        ctx.fillStyle = "rgba(0,0,0,0.7)";
+        ctx.beginPath(); ctx.roundRect(barX - 1, barY - 1, barW + 2, barH + 2, 2); ctx.fill();
+        // HP
+        const hpGrad = ctx.createLinearGradient(barX, 0, barX + barW, 0);
+        if (hpPct > 0.5) { hpGrad.addColorStop(0, "#2ed573"); hpGrad.addColorStop(1, "#7bed9f"); }
+        else if (hpPct > 0.25) { hpGrad.addColorStop(0, "#ffa502"); hpGrad.addColorStop(1, "#ffcc00"); }
+        else { hpGrad.addColorStop(0, "#ff4757"); hpGrad.addColorStop(1, "#ff6b81"); }
+        ctx.fillStyle = hpGrad;
+        ctx.beginPath(); ctx.roundRect(barX, barY, barW * hpPct, barH, 2); ctx.fill();
+
+        ctx.restore();
+    }
+}
+
+function lighten(hex, amount) {
+    const num = parseInt(hex.slice(1), 16);
+    const r = Math.min(255, (num >> 16) + amount);
+    const g = Math.min(255, ((num >> 8) & 0xff) + amount);
+    const b = Math.min(255, (num & 0xff) + amount);
+    return `rgb(${r},${g},${b})`;
+}
+
+// ===== 타워 =====
+class Tower {
+    constructor(x, y, typeIdx, level = 1) {
+        this.gridX = x; this.gridY = y;
+        this.x = x * TILE_SIZE + TILE_SIZE/2;
+        this.y = y * TILE_SIZE + TILE_SIZE/2;
+        this.typeIdx = typeIdx;
+        this.level = level;
+        this.updateStats();
+        this.cooldown = 0;
+        this.isDragging = false;
+        this.animPhase = Math.random() * Math.PI * 2;
+        this.shootFlash = 0;
+    }
+
+    updateStats() {
+        this.type = TOWER_TYPES[this.typeIdx];
+        this.range = 100 + (this.level * 25);
+        this.damage = this.type.baseDmg * Math.pow(2.5, this.level - 1);
+    }
+
+    update() {
+        if (this.cooldown > 0) this.cooldown--;
+        if (this.shootFlash > 0) this.shootFlash--;
+        if (this.cooldown === 0) {
+            let target = enemies.find(e => Math.hypot(e.x - this.x, e.y - this.y) < this.range);
+            if (target) {
+                if (this.typeIdx === 2) {
+                    this.triggerChainLightning(target);
+                    this.cooldown = Math.max(8, 40 - (this.level * 7));
+                } else {
+                    bullets.push(new Bullet(this.x, this.y, target, this.damage, this.type.color, this.typeIdx, this.level));
+                    this.cooldown = Math.max(10, 35 - (this.level * 6));
+                }
+                this.shootFlash = 8;
+                addParticle(this.x, this.y, this.type.color, 3, 2, 12);
+            }
+        }
+    }
+
+    triggerChainLightning(firstTarget) {
+        let currentTarget = firstTarget;
+        let maxChains = 2 + this.level;
+        let hitEnemies = [currentTarget];
+        currentTarget.hp -= this.damage;
+        currentTarget.hitFlash = 8;
+        lightnings.push({ sx: this.x, sy: this.y, tx: currentTarget.x, ty: currentTarget.y, timer: 14 });
+        for (let chainCount = 0; chainCount < maxChains - 1; chainCount++) {
+            let nextTarget = enemies.find(e =>
+                !hitEnemies.includes(e) && e.hp > 0 &&
+                Math.hypot(e.x - currentTarget.x, e.y - currentTarget.y) < 120
+            );
+            if (nextTarget) {
+                nextTarget.hp -= this.damage * 0.75;
+                nextTarget.hitFlash = 8;
+                lightnings.push({ sx: currentTarget.x, sy: currentTarget.y, tx: nextTarget.x, ty: nextTarget.y, timer: 14 });
+                hitEnemies.push(nextTarget);
+                currentTarget = nextTarget;
+            } else break;
+        }
+    }
+
+    draw() {
+        const t = gameTime * 0.04 + this.animPhase;
+        const lv = this.level;
+        const type = this.typeIdx;
+        const color = this.type.color;
+        const cx = this.x, cy = this.y;
+
+        ctx.save();
+        if (this.isDragging) ctx.globalAlpha = 0.55;
+
+        // 레벨별 글로우 강도
+        const glowIntensity = [4, 8, 14, 22, 38][lv - 1];
+        ctx.shadowBlur = glowIntensity + (this.shootFlash > 0 ? 20 : 0);
+        ctx.shadowColor = color;
+
+        // ====== 불 타워 ======
+        if (type === 0) {
+            if (lv === 1) {
+                // 작은 사각형 + 불꽃 1개
+                ctx.fillStyle = "#8b2000";
+                ctx.beginPath(); ctx.roundRect(cx-16, cy-16, 32, 32, 4); ctx.fill();
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.roundRect(cx-10, cy-10, 20, 20, 3); ctx.fill();
+                drawFlame(ctx, cx, cy - 16, 6, 12, t, color);
+            } else if (lv === 2) {
+                ctx.fillStyle = "#6b1800";
+                ctx.beginPath(); ctx.roundRect(cx-18, cy-18, 36, 36, 5); ctx.fill();
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.roundRect(cx-12, cy-12, 24, 24, 4); ctx.fill();
+                drawFlame(ctx, cx-6, cy - 16, 5, 13, t, "#ff9f43");
+                drawFlame(ctx, cx+6, cy - 16, 5, 13, t + 1, color);
+            } else if (lv === 3) {
+                ctx.fillStyle = "#5a1200";
+                ctx.beginPath(); ctx.roundRect(cx-20, cy-20, 40, 40, 6); ctx.fill();
+                ctx.fillStyle = "#ff6348";
+                ctx.beginPath(); ctx.roundRect(cx-14, cy-14, 28, 28, 5); ctx.fill();
+                drawFlame(ctx, cx-8, cy-18, 5, 14, t, "#ff9f43");
+                drawFlame(ctx, cx, cy-20, 6, 16, t+0.7, "#ff4757");
+                drawFlame(ctx, cx+8, cy-18, 5, 14, t+1.4, "#ffa502");
+            } else if (lv === 4) {
+                // 불의 전쟁 요새
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 24);
+                grad.addColorStop(0, "#ff6348"); grad.addColorStop(1, "#7b0000");
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.roundRect(cx-22, cy-22, 44, 44, 7); ctx.fill();
+                // 4개 포탑
+                [[cx-22, cy-22],[cx+22,cy-22],[cx-22,cy+22],[cx+22,cy+22]].forEach(([px,py]) => {
+                    ctx.fillStyle = "#4a0000";
+                    ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = "#ff4757";
+                    ctx.beginPath(); ctx.arc(px, py, 4, 0, Math.PI*2); ctx.fill();
+                });
+                drawFlame(ctx, cx-8, cy-20, 6, 16, t, "#ff9f43");
+                drawFlame(ctx, cx, cy-22, 7, 18, t+0.5, "#ff4757");
+                drawFlame(ctx, cx+8, cy-20, 6, 16, t+1, "#ffa502");
+            } else {
+                // Lv5: 화염 제단 - MAX
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 28);
+                grad.addColorStop(0, "#ffffff"); grad.addColorStop(0.3, "#ffcc00"); grad.addColorStop(0.7, "#ff4757"); grad.addColorStop(1, "#7b0000");
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.roundRect(cx-26, cy-26, 52, 52, 8); ctx.fill();
+                // 회전 불꽃 링
+                for (let i = 0; i < 8; i++) {
+                    const a = (Math.PI * 2 / 8) * i + t * 0.6;
+                    const rx = cx + Math.cos(a) * 28, ry = cy + Math.sin(a) * 28;
+                    ctx.fillStyle = `hsl(${20 + i * 5}, 100%, 60%)`;
+                    ctx.shadowBlur = 12; ctx.shadowColor = "#ff4757";
+                    ctx.beginPath(); ctx.arc(rx, ry, 4, 0, Math.PI*2); ctx.fill();
+                }
+                drawFlame(ctx, cx-10, cy-22, 7, 20, t, "#ff9f43");
+                drawFlame(ctx, cx, cy-26, 9, 24, t+0.4, "#ffffff");
+                drawFlame(ctx, cx+10, cy-22, 7, 20, t+0.8, "#ffa502");
+            }
+        }
+
+        // ====== 얼음 타워 ======
+        else if (type === 1) {
+            if (lv === 1) {
+                ctx.fillStyle = "#003d7a";
+                ctx.beginPath(); ctx.arc(cx, cy, 18, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI*2); ctx.fill();
+                drawSnowflake(ctx, cx, cy, 10, t, color);
+            } else if (lv === 2) {
+                ctx.fillStyle = "#002d5c";
+                ctx.beginPath(); ctx.arc(cx, cy, 20, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = "#74b9ff";
+                ctx.beginPath(); ctx.arc(cx, cy, 15, 0, Math.PI*2); ctx.fill();
+                drawSnowflake(ctx, cx, cy, 12, t, color);
+                // 외부 결정
+                for (let i = 0; i < 4; i++) {
+                    const a = (Math.PI/2) * i + t * 0.2;
+                    ctx.fillStyle = "rgba(84,160,255,0.5)";
+                    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*20, cy+Math.sin(a)*20, 3, 0, Math.PI*2); ctx.fill();
+                }
+            } else if (lv === 3) {
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
+                grad.addColorStop(0, "#fff"); grad.addColorStop(0.4, color); grad.addColorStop(1, "#001a3d");
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.arc(cx, cy, 22, 0, Math.PI*2); ctx.fill();
+                drawSnowflake(ctx, cx, cy, 16, t, "#fff");
+                for (let i = 0; i < 6; i++) {
+                    const a = (Math.PI/3) * i + t * 0.3;
+                    ctx.fillStyle = "rgba(84,160,255,0.7)";
+                    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*24, cy+Math.sin(a)*24, 4, 0, Math.PI*2); ctx.fill();
+                }
+            } else if (lv === 4) {
+                // 빙하 요새
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 25);
+                grad.addColorStop(0, "#fff"); grad.addColorStop(0.5, "#54a0ff"); grad.addColorStop(1, "#001f5c");
+                ctx.fillStyle = grad;
+                // 팔각형
+                ctx.beginPath();
+                for (let i = 0; i < 8; i++) {
+                    const a = (Math.PI/4)*i - Math.PI/8;
+                    i===0 ? ctx.moveTo(cx+Math.cos(a)*25, cy+Math.sin(a)*25) : ctx.lineTo(cx+Math.cos(a)*25, cy+Math.sin(a)*25);
+                }
+                ctx.closePath(); ctx.fill();
+                drawSnowflake(ctx, cx, cy, 18, t, "#fff");
+                // 얼음 첨탑
+                for (let i = 0; i < 4; i++) {
+                    const a = (Math.PI/2)*i + t*0.15;
+                    ctx.fillStyle = "rgba(255,255,255,0.8)";
+                    ctx.beginPath();
+                    const ix = cx+Math.cos(a)*27, iy = cy+Math.sin(a)*27;
+                    ctx.moveTo(ix, iy - 8);
+                    ctx.lineTo(ix - 4, iy + 4); ctx.lineTo(ix + 4, iy + 4);
+                    ctx.closePath(); ctx.fill();
+                }
+            } else {
+                // Lv5: 영원의 빙하 - MAX
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 28);
+                grad.addColorStop(0, "#fff"); grad.addColorStop(0.2, "#e8f4ff"); grad.addColorStop(0.6, "#54a0ff"); grad.addColorStop(1, "#001240");
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.arc(cx, cy, 28, 0, Math.PI*2); ctx.fill();
+                drawSnowflake(ctx, cx, cy, 22, t, "#fff");
+                // 회전 얼음 파편
+                for (let i = 0; i < 8; i++) {
+                    const a = (Math.PI*2/8)*i + t*0.4;
+                    const rx = cx+Math.cos(a)*32, ry = cy+Math.sin(a)*32;
+                    ctx.fillStyle = `rgba(${150+i*10}, ${200+i*5}, 255, 0.8)`;
+                    ctx.shadowBlur = 8; ctx.shadowColor = "#54a0ff";
+                    ctx.beginPath();
+                    ctx.moveTo(rx, ry-5); ctx.lineTo(rx-3, ry+3); ctx.lineTo(rx+3, ry+3);
+                    ctx.closePath(); ctx.fill();
+                }
+            }
+        }
+
+        // ====== 전기 타워 ======
+        else if (type === 2) {
+            if (lv === 1) {
+                ctx.fillStyle = "#6b5900";
+                drawDiamond(ctx, cx, cy, 18, "#6b5900");
+                drawDiamond(ctx, cx, cy, 14, color);
+                // 작은 전기 스파크
+                ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+                for (let i = 0; i < 2; i++) {
+                    const a = Math.PI * i + t * 2;
+                    ctx.beginPath();
+                    ctx.moveTo(cx+Math.cos(a)*16, cy+Math.sin(a)*16);
+                    ctx.lineTo(cx+Math.cos(a)*20, cy+Math.sin(a)*20);
+                    ctx.stroke();
+                }
+            } else if (lv === 2) {
+                drawDiamond(ctx, cx, cy, 20, "#5c4a00");
+                drawDiamond(ctx, cx, cy, 15, "#ffd32a");
+                ctx.strokeStyle = color; ctx.lineWidth = 2;
+                for (let i = 0; i < 3; i++) {
+                    const a = (Math.PI * 2/3)*i + t * 1.5;
+                    ctx.shadowBlur = 6; ctx.shadowColor = color;
+                    ctx.beginPath();
+                    ctx.moveTo(cx+Math.cos(a)*16, cy+Math.sin(a)*16);
+                    ctx.lineTo(cx+Math.cos(a)*22, cy+Math.sin(a)*22);
+                    ctx.stroke();
+                }
+            } else if (lv === 3) {
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
+                grad.addColorStop(0, "#fff9c4"); grad.addColorStop(1, "#f39c12");
+                drawDiamond(ctx, cx, cy, 24, "#3d3000");
+                drawDiamond(ctx, cx, cy, 18, grad);
+                // 전기 아크
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+                ctx.shadowBlur = 10; ctx.shadowColor = color;
+                for (let i = 0; i < 4; i++) {
+                    const a = (Math.PI/2)*i + t*1.2;
+                    ctx.beginPath();
+                    ctx.moveTo(cx+Math.cos(a)*18, cy+Math.sin(a)*18);
+                    const mx = cx+Math.cos(a)*25 + (Math.random()-0.5)*4;
+                    const my = cy+Math.sin(a)*25 + (Math.random()-0.5)*4;
+                    ctx.lineTo(mx, my); ctx.stroke();
+                }
+            } else if (lv === 4) {
+                // 전기 폭풍 코어
+                drawDiamond(ctx, cx, cy, 27, "#2c2000");
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
+                grad.addColorStop(0, "#fff"); grad.addColorStop(0.4, "#feca57"); grad.addColorStop(1, "#e17055");
+                drawDiamond(ctx, cx, cy, 21, grad);
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+                ctx.shadowBlur = 15; ctx.shadowColor = "#feca57";
+                for (let i = 0; i < 6; i++) {
+                    const a = (Math.PI/3)*i + t * 0.8;
+                    const jx = (Math.random()-0.5)*6, jy = (Math.random()-0.5)*6;
+                    ctx.beginPath();
+                    ctx.moveTo(cx+Math.cos(a)*20, cy+Math.sin(a)*20);
+                    ctx.lineTo(cx+Math.cos(a)*28 + jx, cy+Math.sin(a)*28 + jy);
+                    ctx.stroke();
+                }
+            } else {
+                // Lv5: 신의 번개 - MAX
+                drawDiamond(ctx, cx, cy, 30, "#1a1200");
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 24);
+                grad.addColorStop(0, "#fff"); grad.addColorStop(0.2, "#fffacd"); grad.addColorStop(0.6, "#feca57"); grad.addColorStop(1, "#c0392b");
+                drawDiamond(ctx, cx, cy, 24, grad);
+                // 외부 전기 링
+                ctx.strokeStyle = "rgba(255,252,205,0.8)"; ctx.lineWidth = 1;
+                ctx.shadowBlur = 20; ctx.shadowColor = "#feca57";
+                ctx.beginPath(); ctx.arc(cx, cy, 34 + Math.sin(t*3)*2, 0, Math.PI*2);
+                ctx.setLineDash([4,4]); ctx.stroke(); ctx.setLineDash([]);
+                // 강렬한 아크
+                ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.5;
+                for (let i = 0; i < 8; i++) {
+                    const a = (Math.PI/4)*i + t;
+                    const jx = (Math.random()-0.5)*8, jy = (Math.random()-0.5)*8;
+                    ctx.beginPath();
+                    ctx.moveTo(cx+Math.cos(a)*22, cy+Math.sin(a)*22);
+                    ctx.lineTo(cx+Math.cos(a)*36 + jx, cy+Math.sin(a)*36 + jy);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // ====== 독 타워 ======
+        else if (type === 3) {
+            if (lv === 1) {
+                // 육각형 기본
+                ctx.fillStyle = "#0a4a35";
+                drawHex(ctx, cx, cy, 18, "#0a4a35");
+                drawHex(ctx, cx, cy, 14, color);
+                // 독 방울
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.arc(cx, cy-20, 3 + Math.sin(t)*1, 0, Math.PI*2); ctx.fill();
+            } else if (lv === 2) {
+                drawHex(ctx, cx, cy, 20, "#063b28");
+                drawHex(ctx, cx, cy, 15, "#00b894");
+                // 독 방울 2개
+                ctx.shadowBlur = 8; ctx.shadowColor = color;
+                for (let i = 0; i < 2; i++) {
+                    const a = Math.PI * i + t;
+                    const bx = cx + Math.cos(a) * 18, by = cy + Math.sin(a) * 18;
+                    ctx.fillStyle = color;
+                    ctx.beginPath(); ctx.arc(bx, by, 4 + Math.sin(t+i)*1, 0, Math.PI*2); ctx.fill();
+                }
+            } else if (lv === 3) {
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
+                grad.addColorStop(0, "#2ecc71"); grad.addColorStop(1, "#006644");
+                drawHex(ctx, cx, cy, 24, "#041f15");
+                drawHex(ctx, cx, cy, 18, grad);
+                // 독 안개 링
+                ctx.strokeStyle = "rgba(29,209,161,0.4)"; ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.arc(cx, cy, 26 + Math.sin(t*2)*2, 0, Math.PI*2); ctx.stroke();
+                // 방울 3개
+                for (let i = 0; i < 3; i++) {
+                    const a = (Math.PI*2/3)*i + t*0.8;
+                    ctx.fillStyle = "#26de81";
+                    ctx.shadowBlur = 10; ctx.shadowColor = color;
+                    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*24, cy+Math.sin(a)*24, 4, 0, Math.PI*2); ctx.fill();
+                }
+            } else if (lv === 4) {
+                // 독 늪 요새
+                drawHex(ctx, cx, cy, 28, "#021008");
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 22);
+                grad.addColorStop(0, "#7bed9f"); grad.addColorStop(0.5, "#1dd1a1"); grad.addColorStop(1, "#006644");
+                drawHex(ctx, cx, cy, 22, grad);
+                // 맥동 링
+                ctx.strokeStyle = `rgba(29,209,161,${0.4+Math.sin(t*3)*0.3})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.arc(cx, cy, 30, 0, Math.PI*2); ctx.stroke();
+                // 방울 6개
+                ctx.shadowBlur = 12; ctx.shadowColor = "#26de81";
+                for (let i = 0; i < 6; i++) {
+                    const a = (Math.PI/3)*i + t*0.5;
+                    ctx.fillStyle = i%2===0 ? "#1dd1a1" : "#26de81";
+                    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*28, cy+Math.sin(a)*28, 5, 0, Math.PI*2); ctx.fill();
+                }
+            } else {
+                // Lv5: 독룡의 보금자리 - MAX
+                drawHex(ctx, cx, cy, 32, "#010805");
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 26);
+                grad.addColorStop(0, "#fff"); grad.addColorStop(0.2, "#7bed9f"); grad.addColorStop(0.6, "#1dd1a1"); grad.addColorStop(1, "#003322");
+                drawHex(ctx, cx, cy, 26, grad);
+                // 독 기포 폭발
+                for (let i = 0; i < 10; i++) {
+                    const a = (Math.PI*2/10)*i + t*0.3;
+                    const d = 34 + Math.sin(t*2 + i)*4;
+                    ctx.fillStyle = `hsla(${160+i*4},100%,${50+i*3}%,0.85)`;
+                    ctx.shadowBlur = 14; ctx.shadowColor = "#26de81";
+                    ctx.beginPath(); ctx.arc(cx+Math.cos(a)*d, cy+Math.sin(a)*d, 5+Math.sin(t+i)*2, 0, Math.PI*2); ctx.fill();
+                }
+                // 회전 안개
+                ctx.strokeStyle = `rgba(29,209,161,${0.3+Math.sin(t*2)*0.2})`;
+                ctx.lineWidth = 4;
+                ctx.beginPath(); ctx.arc(cx, cy, 38 + Math.sin(t)*3, 0, Math.PI*2); ctx.stroke();
+            }
+        }
+
+        // 레벨 표시
+        ctx.shadowBlur = 0;
+        const lvColors = ["#aaa","#2ed573","#54a0ff","#ffd32a","#ff4757"];
+        if (lv === MAX_LEVEL) {
+            ctx.fillStyle = "#ffcc00";
+            ctx.font = `bold 9px 'Noto Sans KR'`;
+            ctx.textAlign = "center";
+            ctx.fillText("MAX", cx, cy + this.radius() + 14);
+        } else {
+            ctx.fillStyle = lvColors[lv - 1];
+            ctx.font = `bold 9px 'Noto Sans KR'`;
+            ctx.textAlign = "center";
+            ctx.fillText(`Lv${lv}`, cx, cy + this.radius() + 14);
+        }
+
+        ctx.restore();
+
+        // 범위 미리보기 (마우스 호버)
+        if (hoveredTower === this) {
+            ctx.save();
+            ctx.strokeStyle = `rgba(255,255,255,0.15)`;
+            ctx.fillStyle = `rgba(255,255,255,0.04)`;
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.beginPath(); ctx.arc(cx, cy, this.range, 0, Math.PI*2);
+            ctx.fill(); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.restore();
+        }
+    }
+
+    radius() {
+        return [16, 18, 20, 22, 26][this.level - 1];
+    }
+}
+
+// ===== 도형 헬퍼 =====
+function drawFlame(ctx, x, y, w, h, t, color) {
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 10; ctx.shadowColor = color;
+    const wave = Math.sin(t * 3) * 2;
+    ctx.beginPath();
+    ctx.moveTo(x - w/2, y);
+    ctx.bezierCurveTo(x - w/2, y - h*0.3, x + wave, y - h*0.7, x, y - h);
+    ctx.bezierCurveTo(x - wave, y - h*0.7, x + w/2, y - h*0.3, x + w/2, y);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+}
+
+function drawSnowflake(ctx, cx, cy, r, t, color) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+    ctx.shadowBlur = 6; ctx.shadowColor = color;
+    ctx.translate(cx, cy); ctx.rotate(t * 0.3);
+    for (let i = 0; i < 6; i++) {
+        ctx.save(); ctx.rotate((Math.PI/3)*i);
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -r); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, -r*0.5); ctx.lineTo(-r*0.3, -r*0.7); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(0, -r*0.5); ctx.lineTo(r*0.3, -r*0.7); ctx.stroke();
+        ctx.restore();
+    }
+    ctx.restore();
+}
+
+function drawDiamond(ctx, cx, cy, r, fillStyle) {
+    ctx.beginPath();
+    ctx.moveTo(cx, cy-r); ctx.lineTo(cx+r, cy);
+    ctx.lineTo(cx, cy+r); ctx.lineTo(cx-r, cy);
+    ctx.closePath();
+    if (typeof fillStyle === "string") ctx.fillStyle = fillStyle;
+    else ctx.fillStyle = fillStyle;
+    ctx.fill();
+}
+
+function drawHex(ctx, cx, cy, r, fillStyle) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+        const a = (Math.PI/3)*i - Math.PI/6;
+        i === 0 ? ctx.moveTo(cx+r*Math.cos(a), cy+r*Math.sin(a)) : ctx.lineTo(cx+r*Math.cos(a), cy+r*Math.sin(a));
+    }
+    ctx.closePath();
+    ctx.fillStyle = (typeof fillStyle === "string") ? fillStyle : fillStyle;
+    ctx.fill();
+}
+
+// ===== 투사체 =====
+class Bullet {
+    constructor(x, y, target, dmg, color, typeIdx, level) {
+        this.x = x; this.y = y; this.target = target; this.dmg = dmg; this.color = color;
+        this.typeIdx = typeIdx; this.level = level;
+        this.speed = 12;
+        this.trail = [];
+    }
+
+    move() {
+        if (!this.target || this.target.hp <= 0 || !enemies.includes(this.target)) return true;
+        let dx = this.target.x - this.x; let dy = this.target.y - this.y;
+        let dist = Math.hypot(dx, dy);
+        // 트레일
+        this.trail.push({x: this.x, y: this.y});
+        if (this.trail.length > 6) this.trail.shift();
+        if (dist < this.speed) { this.hitSplice(); return true; }
+        this.x += (dx/dist) * this.speed; this.y += (dy/dist) * this.speed;
+        return false;
+    }
+
+    hitSplice() {
+        this.target.hitFlash = 8;
+        addParticle(this.x, this.y, this.color, 8, 3, 20);
+        if (this.typeIdx === 0) {
+            addParticle(this.x, this.y, "#ffa502", 5, 2, 15);
+            let splashRange = 65;
+            enemies.forEach(e => {
+                if (Math.hypot(e.x - this.x, e.y - this.y) <= splashRange) {
+                    e.hp -= this.dmg; e.burnTimer = 140; e.burnDamage = 0.18 * this.level;
+                }
+            });
+        } else if (this.typeIdx === 1) {
+            addParticle(this.x, this.y, "#c8e6ff", 6, 2, 18);
+            let splashRange = 75;
+            enemies.forEach(e => {
+                if (Math.hypot(e.x - this.x, e.y - this.y) <= splashRange) {
+                    e.hp -= this.dmg; e.slowTimer = 120;
+                }
+            });
+        } else if (this.typeIdx === 3) {
+            addParticle(this.x, this.y, "#26de81", 6, 2, 20);
+            this.target.hp -= this.dmg; this.target.poisonTimer = 300; this.target.poisonDamage = 0.45 * this.level;
+        }
+    }
+
+    draw() {
+        ctx.save();
+        // 트레일
+        this.trail.forEach((p, i) => {
+            const alpha = (i / this.trail.length) * 0.5;
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = this.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 2 + (i/this.trail.length)*3, 0, Math.PI*2); ctx.fill();
+        });
+        ctx.globalAlpha = 1;
+
+        // 투사체 본체
+        ctx.shadowBlur = 12; ctx.shadowColor = this.color;
+
+        if (this.typeIdx === 0) {
+            // 불: 화염구
+            const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 9);
+            g.addColorStop(0, "#fff"); g.addColorStop(0.4, "#ffa502"); g.addColorStop(1, "#ff4757");
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(this.x, this.y, 9, 0, Math.PI*2); ctx.fill();
+        } else if (this.typeIdx === 1) {
+            // 얼음: 결정
+            ctx.fillStyle = "#e8f4ff";
+            ctx.strokeStyle = "#54a0ff"; ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) {
+                const a = (Math.PI/3)*i;
+                i===0 ? ctx.moveTo(this.x+Math.cos(a)*7, this.y+Math.sin(a)*7) : ctx.lineTo(this.x+Math.cos(a)*7, this.y+Math.sin(a)*7);
+            }
+            ctx.closePath(); ctx.fill(); ctx.stroke();
+        } else if (this.typeIdx === 3) {
+            // 독: 독 구체
+            const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, 8);
+            g.addColorStop(0, "#7bed9f"); g.addColorStop(1, "#1dd1a1");
+            ctx.fillStyle = g;
+            ctx.beginPath(); ctx.arc(this.x, this.y, 7, 0, Math.PI*2); ctx.fill();
+            // 독 방울 효과
+            ctx.fillStyle = "rgba(29,209,161,0.4)";
+            ctx.beginPath(); ctx.arc(this.x+3, this.y-3, 3, 0, Math.PI*2); ctx.fill();
+        }
+
+        ctx.restore();
+    }
+}
+
+// ===== 저장/로드 =====
+function saveGame() {
+    const savedEnemies = enemies.map(e => ({
+        x:e.x, y:e.y, hp:e.hp, maxHp:e.maxHp, pathIndex:e.pathIndex,
+        isBoss:e.isBoss, isMidBoss:e.isMidBoss,
+        burnTimer:e.burnTimer, burnDamage:e.burnDamage,
+        slowTimer:e.slowTimer, poisonTimer:e.poisonTimer, poisonDamage:e.poisonDamage
+    }));
+    const saveData = {
+        gold, lives, towerCost, wave, currentStage, upgradeLevels, upgradeCosts, enemiesToSpawn, waveTimer, bossWarningTimer,
+        towers: towers.map(t => ({gridX:t.gridX, gridY:t.gridY, typeIdx:t.typeIdx, level:t.level})),
+        enemies: savedEnemies
+    };
+    localStorage.setItem("defence_save_data", JSON.stringify(saveData));
+}
+
+function loadGame() {
+    const dataStr = localStorage.getItem("defence_save_data");
+    if (!dataStr) return false;
+    try {
+        const data = JSON.parse(dataStr);
+        gold=data.gold; lives=data.lives; towerCost=data.towerCost; wave=data.wave;
+        currentStage=data.currentStage||1;
+        upgradeLevels=data.upgradeLevels; upgradeCosts=data.upgradeCosts;
+        enemiesToSpawn=data.enemiesToSpawn!==undefined?data.enemiesToSpawn:0;
+        waveTimer=data.waveTimer||0; bossWarningTimer=data.bossWarningTimer||0;
+        for(let i=0;i<4;i++) TOWER_TYPES[i].baseDmg=[16,12,19,24][i]+(upgradeLevels[i]*5);
+        towers=data.towers.map(t=>new Tower(t.gridX,t.gridY,t.typeIdx,t.level));
+        if(data.enemies&&Array.isArray(data.enemies)){
+            enemies=data.enemies.map(ed=>{
+                let e=new Enemy(ed.isBoss,ed.isMidBoss);
+                e.x=ed.x; e.y=ed.y; e.hp=ed.hp; e.maxHp=ed.maxHp; e.pathIndex=ed.pathIndex;
+                e.burnTimer=ed.burnTimer; e.burnDamage=ed.burnDamage;
+                e.slowTimer=ed.slowTimer; e.poisonTimer=ed.poisonTimer; e.poisonDamage=ed.poisonDamage;
+                return e;
+            });
+        } else enemies=[];
+        return true;
+    } catch(e){ return false; }
+}
+
+// ===== 웨이브 =====
+function startWave() {
+    enemiesToSpawn = (wave===10||wave===20)?1:12+(wave * 8);
+    waveTimer = 0;
+    if (wave===10||wave===20) bossWarningTimer=300;
+    else waveWarningTimer=280;
+    saveGame();
+}
+
+function update() {
+    if (gameState !== "playing") return;
+    if (bossWarningTimer > 0) { bossWarningTimer--; return; }
+    if (waveWarningTimer > 0) { waveWarningTimer--; return; }
+    gameTime++;
+    waveTimer++;
+
+    let spawnBunch = (wave===10||wave===20)?1:Math.min(5,1+Math.floor(wave/4));
+    if (enemiesToSpawn > 0 && waveTimer%50===0) {
+        for (let i = 0; i < spawnBunch; i++) {
+            if (enemiesToSpawn <= 0) break;
+            if (wave===10) enemies.push(new Enemy(false,true));
+            else if (wave===20) enemies.push(new Enemy(true,false));
+            else enemies.push(new Enemy());
+            enemiesToSpawn--;
+        }
+        saveGame();
+    }
+
+    if (enemiesToSpawn===0 && enemies.length===0) {
+        if (wave===20) { gameState="victory"; localStorage.removeItem("defence_save_data"); }
+        else { wave++; gold+=100; towerCost+=5; startWave(); }
+    }
+
+    enemies = enemies.filter(e => {
+        if (e.move()) { lives-=(e.isBoss?10:(e.isMidBoss?5:1)); return false; }
+        if (e.hp<=0) { gold+=(e.isBoss?500:(e.isMidBoss?200:10)); addParticle(e.x,e.y,e.isBoss?"#ff4757":(e.isMidBoss?"#f39c12":"#ffd32a"),12,3,25); return false; }
+        return true;
+    });
+
+    bullets = bullets.filter(b => !b.move());
+    towers.forEach(t => { if(!t.isDragging) t.update(); });
+    lightnings = lightnings.filter(l => { l.timer--; return l.timer > 0; });
+    updateParticles();
+
+    if (lives <= 0) { gameState="gameover"; localStorage.removeItem("defence_save_data"); }
+}
+
+// ===== 맵 그리기 =====
+function drawMap() {
+    // 바닥 타일
+    for (let r = 0; r < MAP_ROWS; r++) {
+        for (let c = 0; c < MAP_COLS; c++) {
+            const x = c * TILE_SIZE, y = r * TILE_SIZE;
+            // 체스판 패턴
+            const isLight = (r + c) % 2 === 0;
+            ctx.fillStyle = isLight ? "#141420" : "#111118";
+            ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+            // 그리드 라인
+            ctx.strokeStyle = "rgba(255,255,255,0.04)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, TILE_SIZE, TILE_SIZE);
+        }
+    }
+
+    // 경로 타일 - 돌 포장 느낌
+    PATH_TILES.forEach((p, idx) => {
+        const x = p.x * TILE_SIZE, y = p.y * TILE_SIZE;
+        // 경로 기본
+        const pathGrad = ctx.createLinearGradient(x, y, x + TILE_SIZE, y + TILE_SIZE);
+        pathGrad.addColorStop(0, "#2c2438");
+        pathGrad.addColorStop(1, "#1e1a2a");
+        ctx.fillStyle = pathGrad;
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        // 경로 테두리 강조
+        ctx.strokeStyle = "rgba(150,100,255,0.15)";
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+        // 돌 무늬
+        ctx.fillStyle = "rgba(255,255,255,0.03)";
+        ctx.fillRect(x + 10, y + 8, 20, 14);
+        ctx.fillRect(x + 40, y + 28, 22, 12);
+        ctx.fillRect(x + 8, y + 44, 18, 16);
+    });
+
+    // 경로 화살표
+    PATH_TILES.forEach((p, idx) => {
+        if (idx === PATH_TILES.length - 1) return;
+        const next = PATH_TILES[idx + 1];
+        if (!next) return;
+        const dx = next.x - p.x, dy = next.y - p.y;
+        const cx_ = (p.x + 0.5) * TILE_SIZE, cy_ = (p.y + 0.5) * TILE_SIZE;
+        ctx.save();
+        ctx.translate(cx_, cy_);
+        ctx.rotate(Math.atan2(dy, dx));
+        ctx.fillStyle = "rgba(160,120,255,0.25)";
+        ctx.beginPath();
+        ctx.moveTo(8, 0); ctx.lineTo(-6, -6); ctx.lineTo(-6, 6);
+        ctx.closePath(); ctx.fill();
+        ctx.restore();
+    });
+
+    // 입구 표시
+    const entry = PATH_TILES[0];
+    ctx.fillStyle = "rgba(255,100,100,0.8)";
+    ctx.font = "bold 11px 'Noto Sans KR'";
+    ctx.textAlign = "center";
+    ctx.fillText("▶ 입구", entry.x * TILE_SIZE + 40, entry.y * TILE_SIZE + 48);
+
+    // 출구 표시
+    const exit = PATH_TILES[PATH_TILES.length - 1];
+    ctx.fillStyle = "rgba(100,255,100,0.8)";
+    ctx.fillText("🏁 출구", exit.x * TILE_SIZE + 40, exit.y * TILE_SIZE + 38);
+}
+
+// ===== UI 패널 =====
+function drawUI() {
+    // 패널 배경
+    const panelGrad = ctx.createLinearGradient(panelX, 0, panelX + panelW, 0);
+    panelGrad.addColorStop(0, "rgba(10,8,20,0.98)");
+    panelGrad.addColorStop(1, "rgba(16,12,30,0.95)");
+    ctx.fillStyle = panelGrad;
+    ctx.fillRect(panelX, 0, panelW, panelH);
+    // 패널 좌측 구분선
+    const sepGrad = ctx.createLinearGradient(panelX, 0, panelX, panelH);
+    sepGrad.addColorStop(0, "transparent");
+    sepGrad.addColorStop(0.3, "rgba(150,100,255,0.5)");
+    sepGrad.addColorStop(0.7, "rgba(150,100,255,0.5)");
+    sepGrad.addColorStop(1, "transparent");
+    ctx.fillStyle = sepGrad;
+    ctx.fillRect(panelX, 0, 1, panelH);
+
+    // 일시정지 버튼 (크게)
+    ctx.fillStyle = "rgba(100,80,160,0.5)";
+    ctx.beginPath(); ctx.roundRect(panelX + 10, 8, panelW - 20, 42, 8); ctx.fill();
+    ctx.strokeStyle = "rgba(180,130,255,0.5)"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.roundRect(panelX + 10, 8, panelW - 20, 42, 8); ctx.stroke();
+    ctx.fillStyle = "#ddd"; ctx.font = "bold 15px 'Noto Sans KR'"; ctx.textAlign = "center";
+    ctx.shadowBlur = 6; ctx.shadowColor = "rgba(180,130,255,0.6)";
+    ctx.fillText("⏸  일시정지", panelX + panelW / 2, 34);
+    ctx.shadowBlur = 0;
+
+    // 스탯 영역
+    ctx.fillStyle = "rgba(255,255,255,0.04)";
+    ctx.beginPath(); ctx.roundRect(panelX + 10, 58, panelW - 20, 96, 8); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.08)"; ctx.lineWidth = 1; ctx.stroke();
+
+    const statItems = [
+        { icon: "💰", label: "자금", value: `${gold} G`, color: "#ffd32a" },
+        { icon: "❤️", label: "라이프", value: `${lives} / 10`, color: lives <= 3 ? "#ff4757" : "#2ed573" },
+        { icon: "🌊", label: "웨이브", value: `${wave} / 20`, color: "#54a0ff" }
+    ];
+    statItems.forEach((s, i) => {
+        const sy = 72 + i * 27;
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.font = "12px 'Noto Sans KR'";
+        ctx.textAlign = "left";
+        ctx.fillText(s.icon + " " + s.label, panelX + 18, sy);
+        ctx.fillStyle = s.color;
+        ctx.font = "bold 13px 'Noto Sans KR'";
+        ctx.textAlign = "right";
+        ctx.shadowBlur = s.label === "라이프" && lives <= 3 ? 10 : 0;
+        ctx.shadowColor = "#ff4757";
+        ctx.fillText(s.value, panelX + panelW - 18, sy);
+        ctx.shadowBlur = 0;
+    });
+
+    // 소환 버튼
+    ctx.save();
+    const btnGrad = ctx.createLinearGradient(panelX + 10, 162, panelX + 10, 210);
+    btnGrad.addColorStop(0, gold >= towerCost ? "#ff4757" : "#3a2a2a");
+    btnGrad.addColorStop(1, gold >= towerCost ? "#c0392b" : "#2a1a1a");
+    ctx.fillStyle = btnGrad;
+    ctx.beginPath(); ctx.roundRect(panelX + 10, 162, panelW - 20, 44, 8); ctx.fill();
+    if (gold >= towerCost) {
+        ctx.strokeStyle = "rgba(255,150,150,0.5)"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(panelX + 10, 162, panelW - 20, 44, 8); ctx.stroke();
+        ctx.shadowBlur = 10; ctx.shadowColor = "#ff4757";
+    }
+    ctx.fillStyle = gold >= towerCost ? "#fff" : "#666";
+    ctx.font = "bold 13px 'Noto Sans KR'";
+    ctx.textAlign = "center";
+    ctx.fillText(`🎲 랜덤 타워 소환 (${towerCost}G)`, panelX + panelW/2, 190);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+
+    // 강화 섹션 타이틀
+    ctx.fillStyle = "rgba(255,255,255,0.35)";
+    ctx.font = "11px 'Noto Sans KR'";
+    ctx.textAlign = "left";
+    ctx.fillText("◆ 타워 공격력 강화", panelX + 12, 225);
+
+    // 강화 버튼들
+    for (let i = 0; i < 4; i++) {
+        const sy = 232 + i * 98;
+        const tt = TOWER_TYPES[i];
+        const isMax = upgradeLevels[i] >= MAX_UPGRADE;
+        const canAfford = gold >= upgradeCosts[i];
+
+        // 카드 배경
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.beginPath(); ctx.roundRect(panelX + 8, sy, panelW - 16, 90, 8); ctx.fill();
+        ctx.strokeStyle = isMax ? "rgba(255,215,0,0.5)" : (canAfford ? tt.color + "60" : "rgba(255,255,255,0.05)");
+        ctx.lineWidth = 1.5; ctx.stroke();
+
+        // 타워 미니 아이콘
+        ctx.fillStyle = tt.color;
+        ctx.shadowBlur = 10; ctx.shadowColor = tt.color;
+        ctx.beginPath(); ctx.arc(panelX + 28, sy + 28, 12, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#fff"; ctx.font = "bold 14px Arial"; ctx.textAlign = "center";
+        ctx.fillText(tt.emoji, panelX + 28, sy + 33);
+
+        // 타워 이름 & 강화 레벨
+        ctx.fillStyle = "#fff"; ctx.font = `bold 13px 'Noto Sans KR'`; ctx.textAlign = "left";
+        ctx.fillText(`${tt.name} 타워`, panelX + 46, sy + 22);
+        ctx.fillStyle = "rgba(255,255,255,0.5)"; ctx.font = `11px 'Noto Sans KR'`;
+        ctx.fillText(`강화 ${upgradeLevels[i]} / ${MAX_UPGRADE}`, panelX + 46, sy + 38);
+
+        // 강화 레벨 닷 표시
+        for (let d = 0; d < MAX_UPGRADE; d++) {
+            ctx.fillStyle = d < upgradeLevels[i] ? tt.color : "rgba(255,255,255,0.1)";
+            ctx.beginPath(); ctx.arc(panelX + 46 + d * 20, sy + 54, 6, 0, Math.PI*2); ctx.fill();
+            if (d < upgradeLevels[i]) {
+                ctx.strokeStyle = tt.color; ctx.lineWidth = 1;
+                ctx.shadowBlur = 4; ctx.shadowColor = tt.color;
+                ctx.stroke(); ctx.shadowBlur = 0;
+            }
+        }
+
+        // 강화 버튼
+        if (isMax) {
+            ctx.fillStyle = "rgba(255,215,0,0.15)";
+            ctx.beginPath(); ctx.roundRect(panelX + 150, sy + 15, 125, 28, 6); ctx.fill();
+            ctx.fillStyle = "#ffd32a"; ctx.font = "bold 12px 'Noto Sans KR'"; ctx.textAlign = "center";
+            ctx.shadowBlur = 6; ctx.shadowColor = "#ffd32a";
+            ctx.fillText("✨ MAX", panelX + 213, sy + 33);
+            ctx.shadowBlur = 0;
+        } else {
+            const btnColor = canAfford ? tt.color : "#333";
+            ctx.fillStyle = canAfford ? btnColor + "30" : "#1a1a1a";
+            ctx.beginPath(); ctx.roundRect(panelX + 150, sy + 15, 125, 28, 6); ctx.fill();
+            ctx.strokeStyle = canAfford ? btnColor + "80" : "#333"; ctx.lineWidth = 1; ctx.stroke();
+            ctx.fillStyle = canAfford ? "#fff" : "#555";
+            ctx.font = "bold 11px 'Noto Sans KR'"; ctx.textAlign = "center";
+            ctx.fillText(`강화 ${upgradeCosts[i]}G`, panelX + 213, sy + 33);
+        }
+    }
+}
+
+// ===== 로비 화면 =====
+function drawLobby() {
+    // 배경
+    ctx.fillStyle = "rgba(5,5,15,0.97)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 타이틀
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.shadowBlur = 30; ctx.shadowColor = "#8b5cf6";
+    const titleGrad = ctx.createLinearGradient(0, 200, canvas.width, 250);
+    titleGrad.addColorStop(0, "#ff6b6b");
+    titleGrad.addColorStop(0.3, "#ffd32a");
+    titleGrad.addColorStop(0.6, "#54a0ff");
+    titleGrad.addColorStop(1, "#1dd1a1");
+    ctx.fillStyle = titleGrad;
+    ctx.font = "bold 48px 'Cinzel', serif";
+    ctx.fillText("ELEMENTAL", 440, 195);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 32px 'Cinzel', serif";
+    ctx.shadowColor = "#fff";
+    ctx.fillText("TOWER DEFENSE", 440, 238);
+    ctx.restore();
+
+    // 원소 아이콘들 (캔버스 중앙 기준 정렬)
+    const iconSpacing = 80;
+    const iconStartX = canvas.width / 2 - (iconSpacing * 1.5);
+    const icons = [
+        {emoji:"🔥", color:"#ff4757", x:iconStartX,                y:290},
+        {emoji:"❄️", color:"#54a0ff", x:iconStartX + iconSpacing,  y:290},
+        {emoji:"⚡", color:"#feca57", x:iconStartX + iconSpacing*2, y:290},
+        {emoji:"☠️", color:"#1dd1a1", x:iconStartX + iconSpacing*3, y:290}
+    ];
+    icons.forEach(ic => {
+        ctx.save();
+        ctx.shadowBlur = 20; ctx.shadowColor = ic.color;
+        ctx.font = "32px Arial"; ctx.textAlign = "center";
+        ctx.fillText(ic.emoji, ic.x, ic.y);
+        ctx.restore();
+    });
+
+    // 버튼들
+    drawMenuButton(290, 330, 300, 52, "#ff4757", "#ff6b6b", "🎮  새 게임 시작");
+    const hasSave = localStorage.getItem("defence_save_data") !== null;
+    drawMenuButton(290, 400, 300, 52, hasSave ? "#2ed573" : "#333", hasSave ? "#7bed9f" : "#444",
+        hasSave ? "💾  게임 이어하기" : "💾  저장 없음", !hasSave);
+}
+
+function drawStageSelect() {
+    ctx.fillStyle = "rgba(5,5,15,0.97)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.textAlign = "center"; ctx.fillStyle = "#fff";
+    ctx.font = "bold 36px 'Cinzel', serif"; ctx.fillText("STAGE SELECT", 440, 160);
+
+    drawMenuButton(290, 220, 300, 52, "#3498db", "#74b9ff", "⚔️  1 스테이지");
+    drawMenuButton(290, 295, 300, 52, "#333", "#555", "🔒  2 스테이지 (잠금)", true);
+    drawMenuButton(290, 390, 300, 52, "#57606f", "#95a5a6", "← 이전으로");
+}
+
+function drawMenuButton(x, y, w, h, color, hoverColor, text, disabled = false) {
+    ctx.save();
+    if (!disabled) { ctx.shadowBlur = 15; ctx.shadowColor = color; }
+    const g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, disabled ? "#2a2a2a" : color);
+    g.addColorStop(1, disabled ? "#1a1a1a" : color + "aa");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 10); ctx.fill();
+    if (!disabled) {
+        ctx.strokeStyle = hoverColor + "80"; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = disabled ? "#555" : "#fff";
+    ctx.font = `bold 16px 'Noto Sans KR'`;
+    ctx.textAlign = "center";
+    ctx.fillText(text, x + w/2, y + h/2 + 6);
+    ctx.restore();
+}
+
+// ===== 메인 draw =====
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#08070f";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (gameState === "lobby") { drawLobby(); return; }
+    if (gameState === "stage_select") { drawStageSelect(); return; }
+
+    // ===== 게임 중 =====
+    drawMap();
+    drawParticles();
+    towers.forEach(t => t.draw());
+    enemies.forEach(e => e.draw());
+    bullets.forEach(b => b.draw());
+
+    // 번개 이펙트
+    lightnings.forEach(l => {
+        ctx.save();
+        const alpha = l.timer / 14;
+        ctx.globalAlpha = alpha;
+        // 외곽 글로우
+        ctx.strokeStyle = "#ffd32a"; ctx.lineWidth = 5;
+        ctx.shadowBlur = 20; ctx.shadowColor = "#feca57";
+        ctx.beginPath(); ctx.moveTo(l.sx, l.sy);
+        const mid1X = (l.sx + l.tx)/2 + (Math.random()*24-12);
+        const mid1Y = (l.sy + l.ty)/2 + (Math.random()*24-12);
+        ctx.lineTo(mid1X, mid1Y); ctx.lineTo(l.tx, l.ty); ctx.stroke();
+        // 코어
+        ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+        ctx.shadowBlur = 6;
+        ctx.beginPath(); ctx.moveTo(l.sx, l.sy); ctx.lineTo(mid1X, mid1Y); ctx.lineTo(l.tx, l.ty); ctx.stroke();
+        ctx.restore();
+    });
+
+    drawUI();
+
+    // 웨이브 알림
+    if (waveWarningTimer > 0) {
+        const alpha = Math.min(1, waveWarningTimer / 60);
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.fillRect(0, 260, 560, 120);
+        ctx.fillStyle = "#54a0ff";
+        ctx.shadowBlur = 20; ctx.shadowColor = "#54a0ff";
+        ctx.font = "bold 36px 'Cinzel', serif";
+        ctx.textAlign = "center";
+        ctx.fillText(`WAVE ${wave}`, 280, 315);
+        ctx.font = "bold 18px 'Noto Sans KR'";
+        ctx.fillStyle = "#fff"; ctx.shadowBlur = 0;
+        ctx.fillText("준비하세요!", 280, 355);
+        ctx.restore();
+    }
+
+    // 보스 경고
+    if (bossWarningTimer > 0) {
+        if (Math.floor(bossWarningTimer / 15) % 2 === 0) {
+            ctx.fillStyle = "rgba(255,0,0,0.12)";
+            ctx.fillRect(0, 0, 560, 640);
+        }
+        ctx.save();
+        ctx.fillStyle = "#ff4757";
+        ctx.shadowBlur = 25; ctx.shadowColor = "#ff4757";
+        ctx.font = "bold 30px 'Cinzel', serif";
+        ctx.textAlign = "center";
+        ctx.fillText("⚠ WARNING: BOSS APPROACHING ⚠", 280, 310);
+        const bossName = wave === 20 ? "최종 보스" : "중간 보스";
+        ctx.font = "bold 16px 'Noto Sans KR'";
+        ctx.fillStyle = "#ffcc00";
+        ctx.fillText(bossName + " 출현!", 280, 350);
+        ctx.restore();
+    }
+
+    // 일시정지
+    if (gameState === "paused") {
+        ctx.fillStyle = "rgba(0,0,0,0.88)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#fff"; ctx.font = "bold 42px 'Cinzel', serif";
+        ctx.shadowBlur = 15; ctx.shadowColor = "#8b5cf6";
+        ctx.fillText("PAUSED", 440, 240);
+        ctx.shadowBlur = 0;
+        drawMenuButton(340, 280, 200, 50, "#2ed573", "#7bed9f", "▶ 계속하기");
+        drawMenuButton(340, 350, 200, 50, "#ff4757", "#ff6b6b", "🏠 메인 메뉴");
+    }
+
+    // 게임오버/승리
+    if (gameState === "gameover" || gameState === "victory") {
+        ctx.fillStyle = "rgba(0,0,0,0.92)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+        ctx.textAlign = "center";
+        const isVictory = gameState === "victory";
+        ctx.shadowBlur = 30; ctx.shadowColor = isVictory ? "#1dd1a1" : "#ff4757";
+        ctx.fillStyle = isVictory ? "#1dd1a1" : "#ff4757";
+        ctx.font = "bold 54px 'Cinzel', serif";
+        ctx.fillText(isVictory ? "STAGE CLEAR!" : "YOU DIED", 440, 280);
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "rgba(255,255,255,0.6)";
+        ctx.font = "16px 'Noto Sans KR'";
+        ctx.fillText("화면을 클릭하면 로비로 돌아갑니다", 440, 340);
+    }
+}
+
+// ===== 이벤트 =====
+canvas.addEventListener("mousemove", e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    if (dragTower) {
+        dragTower.x = mx; dragTower.y = my;
+    }
+    if (gameState === "playing") {
+        hoveredTower = towers.find(t => !t.isDragging && Math.hypot(t.x - mx, t.y - my) < 30) || null;
+    }
+});
+
+canvas.addEventListener("mousedown", e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+
+    if (gameState === "lobby") {
+        if (mx>290&&mx<590&&my>330&&my<382) {
+            const dataStr = localStorage.getItem("defence_save_data");
+            if (dataStr) { try { if(!confirm("새 게임을 시작하시겠습니까? (저장 데이터가 삭제됩니다)")) return; } catch(err){} }
+            gameState = "stage_select";
+        } else if (mx>290&&mx<590&&my>400&&my<452) {
+            if (localStorage.getItem("defence_save_data")) {
+                bullets=[]; lightnings=[];
+                if (loadGame()) gameState = "playing";
+            }
+        }
+    } else if (gameState === "stage_select") {
+        if (mx>290&&mx<590&&my>220&&my<272) {
+            localStorage.removeItem("defence_save_data");
+            upgradeLevels=[0,0,0,0]; upgradeCosts=[100,100,100,100];
+            TOWER_TYPES[0].baseDmg=16; TOWER_TYPES[1].baseDmg=12; TOWER_TYPES[2].baseDmg=19; TOWER_TYPES[3].baseDmg=24;
+            enemies=[]; bullets=[]; lightnings=[]; waveTimer=0; bossWarningTimer=0; waveWarningTimer=0; gameTime=0;
+            currentStage=1; gameState="playing"; wave=1; gold=200; lives=10; towerCost=100; towers=[]; startWave();
+        } else if (mx>290&&mx<590&&my>390&&my<442) {
+            gameState = "lobby";
+        }
+    } else if (gameState === "playing") {
+        // 일시정지 버튼
+        if (mx>panelX+10&&mx<panelX+panelW-10&&my>8&&my<50) { togglePause(); return; }
+        // 소환 버튼
+        if (mx>panelX+10&&mx<panelX+280&&my>162&&my<206) { spawnTower(); return; }
+        // 강화 버튼
+        for (let i = 0; i < 4; i++) {
+            const sy = 232 + i * 98;
+            if (mx>panelX+150&&mx<panelX+275&&my>sy+15&&my<sy+43) { buyUpgrade(i); return; }
+        }
+        // 타워 드래그
+        dragTower = towers.find(t => Math.hypot(t.x - mx, t.y - my) < 30);
+        if (dragTower) dragTower.isDragging = true;
+    } else if (gameState === "paused") {
+        if (mx>340&&mx<540&&my>280&&my<330) { gameState="playing"; saveGame(); }
+        else if (mx>340&&mx<540&&my>350&&my<400) { saveGame(); gameState="lobby"; }
+    } else {
+        gameState = "lobby";
+    }
+});
+
+canvas.addEventListener("mouseup", e => {
+    if (!dragTower) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    let gx = Math.floor(mx/TILE_SIZE), gy = Math.floor(my/TILE_SIZE);
+    let onPath = PATH_TILES.some(p => p.x===gx&&p.y===gy);
+    let target = towers.find(t => t!==dragTower&&t.gridX===gx&&t.gridY===gy);
+    if (!onPath && target && target.typeIdx===dragTower.typeIdx && target.level===dragTower.level && target.level<MAX_LEVEL) {
+        target.level++; target.updateStats();
+        towers = towers.filter(t => t!==dragTower);
+        addParticle(target.x, target.y, TOWER_TYPES[target.typeIdx].color, 15, 3, 30);
+        saveGame();
+    } else {
+        if (!onPath && gx<MAP_COLS && gy<MAP_ROWS && !target && mx<560) {
+            dragTower.gridX=gx; dragTower.gridY=gy;
+        }
+        dragTower.x=dragTower.gridX*TILE_SIZE+TILE_SIZE/2;
+        dragTower.y=dragTower.gridY*TILE_SIZE+TILE_SIZE/2;
+        saveGame();
+    }
+    dragTower.isDragging=false; dragTower=null;
+});
+
+window.addEventListener("keydown", e => {
+    if (e.key==="p"||e.key==="P") togglePause();
+});
+
+function togglePause() {
+    if (gameState==="playing") gameState="paused";
+    else if (gameState==="paused") { gameState="playing"; saveGame(); }
+}
+
+function buyUpgrade(idx) {
+    if (upgradeLevels[idx]>=MAX_UPGRADE) return;
+    if (gold>=upgradeCosts[idx]) {
+        gold-=upgradeCosts[idx]; upgradeLevels[idx]++;
+        TOWER_TYPES[idx].baseDmg+=5; upgradeCosts[idx]+=50;
+        towers.forEach(t => { if(t.typeIdx===idx) t.updateStats(); });
+        addParticle(canvas.width/2, canvas.height/2, TOWER_TYPES[idx].color, 20, 4, 35);
+        saveGame();
+    }
+}
+
+function spawnTower() {
+    if (gold<towerCost) return;
+    let slots = [];
+    for(let r=0;r<MAP_ROWS;r++) for(let c=0;c<MAP_COLS;c++) {
+        let onPath=PATH_TILES.some(p=>p.x===c&&p.y===r);
+        let hasTower=towers.find(t=>t.gridX===c&&t.gridY===r);
+        if(!onPath&&!hasTower) slots.push({c,r});
+    }
+    if (slots.length>0) {
+        let s=slots[Math.floor(Math.random()*slots.length)];
+        const newTower = new Tower(s.c,s.r,Math.floor(Math.random()*4));
+        towers.push(newTower);
+        addParticle(newTower.x, newTower.y, TOWER_TYPES[newTower.typeIdx].color, 12, 3, 25);
+        gold-=towerCost;
+        saveGame();
+    }
+}
+
+function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
+gameLoop();
+</script>
+</body>
+</html>

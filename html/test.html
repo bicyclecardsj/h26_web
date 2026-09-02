@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>4키 곡 선택 리듬 게임</title>
+    <style>
+        body { text-align: center; background-color: #f0f0f0; font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 20px; }
+        #gameContainer { display: block; margin: 0 auto; width: 320px; }
+        canvas { background-color: #15151c; display: block; border: 4px solid #333; border-radius: 4px; box-shadow: 0 4px 15px rgba(0,0,0,0.4); }
+    </style>
+</head>
+<body>
+
+    <h1>4키 곡 선택 리듬게임</h1>
+    <p style="color: #666; font-size: 13px;">원하는 곡을 선택해 플레이하세요! (키보드 <b>D, F, J, K</b> 사용)</p>
+    
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="320" height="550"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        // 게임 상태 관리: "menu"(곡선택), "playing"(게임중), "gameover"(결과화면)
+        let gameState = "menu"; 
+        let score = 0; let combo = 0; let maxCombo = 0; let hp = 10; const maxHp = 10;
+        
+        const keys = ["d", "f", "j", "k"];
+        const laneX = [0, 80, 160, 240];
+        const laneWidth = 80;
+        const judgeY = canvas.height - 70;
+        const judgeHeight = 10;
+
+        let notes = [];
+        let keyPressedStatus = [false, false, false, false];
+        let currentJudgement = ""; let judgeTimer = 0;
+
+        // 오디오 객체
+        let audio = new Audio();
+
+        // --- [★ 07.mp3 음원 전용 청음 채보 데이터] ---
+        const track1Nodes = [
+            // [0초 ~ 4초] 기본 비트 빌드업 (쿵 짝 쿵 짝)
+            { time: 1300, lane: 0 },  // D
+            { time: 2000, lane: 2 },  // J
+            { time: 2700, lane: 1 },  // F
+            { time: 3400, lane: 3 },  // K
+
+            // [4초 ~ 8초] 신디사이저 멜로디 진입 구역
+            { time: 4100, lane: 0 },  // D
+            { time: 4450, lane: 1 },  // F
+            { time: 4800, lane: 2 },  // J
+            { time: 5150, lane: 3 },  // K
+            { time: 5500, lane: 0 },  // D와 K 동시 타격
+            { time: 5500, lane: 3 },  
+            { time: 6200, lane: 1 },  // F
+            { time: 6900, lane: 2 },  // J
+
+            // [8초 ~ 11초] 메인 테마 멜로디 고조
+            { time: 7600, lane: 0 },  
+            { time: 7950, lane: 1 },  
+            { time: 8300, lane: 2 },  
+            { time: 9000, lane: 1 },  
+            { time: 9350, lane: 2 },  
+            { time: 9700, lane: 3 },  
+            { time: 10400, lane: 1 }, // F와 J 동시 타격
+            { time: 10400, lane: 2 }, 
+
+            // [11초 ~ 15초] 드럼 비트가 쪼개지는 연타 구간
+            { time: 11100, lane: 0 }, // D 연타 시작
+            { time: 11400, lane: 0 }, 
+            { time: 11800, lane: 3 }, // K 연타
+            { time: 12100, lane: 3 }, 
+            { time: 12500, lane: 1 }, // 중간 계단식 배치
+            { time: 12850, lane: 2 }, 
+            { time: 13200, lane: 0 }, 
+            { time: 13550, lane: 3 }, 
+            { time: 14200, lane: 0 }, // 마무리 동시치기
+            { time: 14200, lane: 3 }
+        ];
+
+        // 2번 곡 기본 가이드 샘플 채보 (추후 다른 음악 연결 시 활용 가능)
+        const track2Nodes = [
+            {time: 800, lane: 1},  {time: 1200, lane: 2}, {time: 1600, lane: 1}, {time: 2000, lane: 2},
+            {time: 2400, lane: 0}, {time: 2600, lane: 0}, {time: 2800, lane: 3}, {time: 3000, lane: 3}
+        ];
+        
+        let playList = []; // 게임 루프에서 실시간 소모할 채보 복사본
+
+        // 메뉴 UI 버튼 좌표 구역
+        const song1Btn = { x: 30, y: 180, w: 260, h: 55 };
+        const song2Btn = { x: 30, y: 260, w: 260, h: 55 };
+        const backBtn  = { x: 60, y: 440, w: 200, h: 45 };
+
+        // 키 다운 핸들러
+        window.addEventListener("keydown", (e) => {
+            if (gameState !== "playing" || e.repeat) return;
+            const keyIndex = keys.indexOf(e.key.toLowerCase());
+            if (keyIndex !== -1) {
+                keyPressedStatus[keyIndex] = true;
+                checkJudgement(keyIndex);
+            }
+        });
+
+        // 키 업 핸들러
+        window.addEventListener("keyup", (e) => {
+            const keyIndex = keys.indexOf(e.key.toLowerCase());
+            if (keyIndex !== -1) keyPressedStatus[keyIndex] = false;
+        });
+
+        // 마우스 클릭 이벤트 (곡 선택 및 재시작 제어)
+        canvas.addEventListener("click", (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left; const mouseY = e.clientY - rect.top;
+
+            if (gameState === "menu") {
+                if (mouseX >= song1Btn.x && mouseX <= song1Btn.x + song1Btn.w && mouseY >= song1Btn.y && mouseY <= song1Btn.y + song1Btn.h) {
+                    startRhythmGame(1);
+                }
+                else if (mouseX >= song2Btn.x && mouseX <= song2Btn.x + song2Btn.w && mouseY >= song2Btn.y && mouseY <= song2Btn.y + song2Btn.h) {
+                    startRhythmGame(2);
+                }
+            } 
+            else if (gameState === "gameover") {
+                if (mouseX >= backBtn.x && mouseX <= backBtn.x + backBtn.w && mouseY >= backBtn.y && mouseY <= backBtn.y + backBtn.h) {
+                    gameState = "menu";
+                }
+            }
+        });
+
+        // 데이터 초기화 및 오디오 스트리밍 시작
+        function startRhythmGame(songNum) {
+            score = 0; combo = 0; maxCombo = 0; hp = maxHp; notes = []; currentJudgement = ""; judgeTimer = 0;
+
+            let selectedSource = (songNum === 1) ? track1Nodes : track2Nodes;
+            playList = JSON.parse(JSON.stringify(selectedSource)); // 원본 배열 보호를 위한 딥카피
+
+            audio.src = `song${songNum}.mp3`;
+            audio.play().catch(err => {
+                alert(`song${songNum}.mp3 파일을 찾을 수 없습니다.\nHTML 파일과 동일한 경로에 음원이 있는지 확인해 주세요.`);
+                gameState = "menu";
+            });
+
+            gameState = "playing";
+        }
+
+        // 판정 체크 오차 알고리즘
+        function checkJudgement(laneIndex) {
+            let hit = false;
+            for (let i = 0; i < notes.length; i++) {
+                let note = notes[i];
+                if (note.lane === laneIndex) {
+                    let distance = Math.abs(note.y - judgeY); // 노트와 판정 가이드선 간의 절대 거리 오차 계산
+                    
+                    if (distance <= 18) { currentJudgement = "PERFECT"; score += 100 + (combo * 2); combo++; hit = true; notes.splice(i, 1); break; } 
+                    else if (distance <= 40) { currentJudgement = "GREAT"; score += 60; combo++; hit = true; notes.splice(i, 1); break; } 
+                    else if (distance <= 65) { currentJudgement = "GOOD"; score += 30; combo++; hit = true; notes.splice(i, 1); break; }
+                }
+            }
+            if (hit) {
+                if (combo > maxCombo) maxCombo = combo;
+                judgeTimer = 25;
+            }
+        }
+
+        // 메인 그래픽 렌더링 루프
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. 메뉴 화면 상태
+            if (gameState === "menu") {
+                ctx.fillStyle = "#fff"; ctx.font = "bold 26px sans-serif"; ctx.textAlign = "center";
+                ctx.fillText("SELECT TRACK", canvas.width / 2, 100);
+
+                ctx.fillStyle = "#2196F3"; ctx.fillRect(song1Btn.x, song1Btn.y, song1Btn.w, song1Btn.h);
+                ctx.fillStyle = "#fff"; ctx.font = "bold 15px sans-serif";
+                ctx.fillText("🎵 Track 01 플레이 (07.mp3)", canvas.width / 2, song1Btn.y + 33);
+
+                ctx.fillStyle = "#009688"; ctx.fillRect(song2Btn.x, song2Btn.y, song2Btn.w, song2Btn.h);
+                ctx.fillStyle = "#fff";
+                ctx.fillText("🎵 Track 02 플레이 (샘플)", canvas.width / 2, song2Btn.y + 33);
+            } 
+            
+            // 2. 인게임 플레이 상태
+            else if (gameState === "playing") {
+                if (audio.ended) { gameState = "gameover"; audio.pause(); }
+
+                let currentProgressMs = audio.currentTime * 1000; // HTML5 Audio 실시간 재생 밀리초 파싱
+
+                // 채보의 등록 시간과 현재 오디오 재생시간을 대조해 800ms 전 시점에 화면 최상단에 스폰
+                if (playList.length > 0 && playList[0].time <= currentProgressMs + 800) {
+                    let target = playList.shift();
+                    notes.push({ lane: target.lane, y: 0, speed: 6, width: laneWidth, height: 16 });
+                }
+
+                // 기하학적 레인 배경 및 건반 광원(Key Beam) 렌더링
+                for (let i = 0; i < 4; i++) {
+                    if (keyPressedStatus[i]) {
+                        let gradient = ctx.createLinearGradient(laneX[i], judgeY - 120, laneX[i], judgeY);
+                        gradient.addColorStop(0, "rgba(0, 255, 204, 0)"); gradient.addColorStop(1, "rgba(0, 255, 204, 0.2)");
+                        ctx.fillStyle = gradient; ctx.fillRect(laneX[i], judgeY - 120, laneWidth, 120);
+                    }
+                    ctx.strokeStyle = "#252530"; ctx.strokeRect(laneX[i], 0, laneWidth, canvas.height);
+                }
+
+                // 크로스헤어 판정선 가이드
+                ctx.fillStyle = "#3a3a4a"; ctx.fillRect(0, judgeY, canvas.width, judgeHeight);
+                ctx.strokeStyle = "#00ffcc"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, judgeY); ctx.lineTo(canvas.width, judgeY); ctx.stroke();
+
+                // 노트의 드롭 처리 및 탈락 조건문
+                for (let i = notes.length - 1; i >= 0; i--) {
+                    let note = notes[i]; note.y += note.speed;
+                    
+                    ctx.fillStyle = "#00ccff"; ctx.fillRect(laneX[note.lane] + 2, note.y, note.width - 4, note.height);
+
+                    // 판정 임계 구역 이탈 시 MISS 처리
+                    if (note.y > judgeY + 25) {
+                        notes.splice(i, 1);
+                        currentJudgement = "MISS"; combo = 0; judgeTimer = 25;
+                        hp--; if (hp <= 0) { gameState = "gameover"; audio.pause(); }
+                    }
+                }
+
+                // 하단 인터페이스 하드웨어 매핑 텍스트
+                for (let i = 0; i < 4; i++) {
+                    ctx.fillStyle = keyPressedStatus[i] ? "#00ffcc" : "#22222a"; ctx.fillRect(laneX[i], canvas.height - 40, laneWidth, 40);
+                    ctx.fillStyle = keyPressedStatus[i] ? "#111" : "#888"; ctx.font = "bold 15px sans-serif";
+                    ctx.fillText(["D","F","J","K"][i], laneX[i] + laneWidth / 2, canvas.height - 15);
+                }
+
+                // 판정 피드백 및 콤보 계수 출력
+                if (judgeTimer > 0) {
+                    judgeTimer--;
+                    ctx.fillStyle = (currentJudgement === "MISS") ? "#ff3333" : "#ffcc00";
+                    ctx.font = "bold 25px sans-serif"; ctx.fillText(currentJudgement, canvas.width / 2, 210);
+                    if (combo > 0) { ctx.fillStyle = "#fff"; ctx.fillText(combo + " COMBO", canvas.width / 2, 250); }
+                }
+
+                // 인게임 메트릭 UI (스코어 및 라이프 게이지)
+                ctx.fillStyle = "#fff"; ctx.font = "14px sans-serif"; ctx.textAlign = "left"; ctx.fillText("SCORE: " + score, 15, 30);
+                ctx.fillStyle = "#222"; ctx.fillRect(180, 18, 120, 12);
+                ctx.fillStyle = "#ff3366"; ctx.fillRect(180, 18, (hp / maxHp) * 120, 12);
+            } 
+            
+            // 3. 결과 창 화면 상태
+            else if (gameState === "gameover") {
+                ctx.fillStyle = "#fff"; ctx.font = "bold 30px sans-serif"; ctx.textAlign = "center";
+                ctx.fillText("PLAY FINISHED", canvas.width / 2, 170);
+                ctx.font = "16px sans-serif"; ctx.fillText("최종 스코어: " + score, canvas.width / 2, 230);
+                ctx.fillStyle = "#ffcc00"; ctx.fillText("최대 콤보: " + maxCombo, canvas.width / 2, 260);
+
+                ctx.fillStyle = "#555"; ctx.fillRect(backBtn.x, backBtn.y, backBtn.w, backBtn.h);
+                ctx.fillStyle = "#fff"; ctx.fillText("메인 메뉴로", canvas.width / 2, backBtn.y + 27);
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
