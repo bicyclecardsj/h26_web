@@ -4,7 +4,7 @@ HTML, JavaScript, AJAX 등 웹 프론트엔드 기본 기술을 학습하고, �
 
 ---
 
-## 🛠 개발 환경 및 기술 스택
+## 🛠 개발 환경
 
 * **Languages**: HTML5, CSS3, JavaScript (ES6+)
 * **Techniques**: Asynchronous JavaScript (AJAX / Fetch API, XMLHttpRequest)
@@ -24,7 +24,7 @@ HTML, JavaScript, AJAX 등 웹 프론트엔드 기본 기술을 학습하고, �
 
 ---
 
-## 📂 프로젝트 구조 (Project Structure)
+## 📂 저장소 구조
 
 ```text
 ├── html/             # HTML 기초 및 JavaScript 문법/DOM 실습
